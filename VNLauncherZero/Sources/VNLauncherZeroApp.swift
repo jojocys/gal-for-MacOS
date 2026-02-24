@@ -7,11 +7,20 @@ struct VNLauncherZeroApp: App {
     var body: some Scene {
         WindowGroup("GAL FOR MacOS") {
             RootView(store: store)
-                .frame(minWidth: 1100, minHeight: 720)
         }
-        Settings {
-            DeveloperExportView(store: store)
-                .frame(width: 760, height: 560)
+        .windowStyle(.titleBar)
+        .commands {
+            CommandGroup(replacing: .newItem) {
+                Button("添加游戏文件夹") {
+                    store.chooseAndScanGameFolder()
+                }
+                .keyboardShortcut("o", modifiers: [.command])
+
+                Button("开始游戏") {
+                    store.startGame()
+                }
+                .keyboardShortcut(.return, modifiers: [.command])
+            }
         }
     }
 }

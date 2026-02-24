@@ -28,10 +28,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/AppTheme.swift"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/GameLauncher.swift"
         },
         {
@@ -44,7 +40,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/PlatformDialogs.swift"
+          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/PlatformPickers.swift"
         },
         {
           "kind" : "file",
@@ -76,11 +72,10 @@
       "moduleOutputPath" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/Modules/VNLauncherZero.swiftmodule",
       "objects" : [
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppStore.swift.o",
-        "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppTheme.swift.o",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameLauncher.swift.o",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameScanner.swift.o",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/Models.swift.o",
-        "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformDialogs.swift.o",
+        "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformPickers.swift.o",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RootView.swift.o",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeInstaller.swift.o",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeManager.swift.o",
@@ -140,10 +135,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppTheme.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameLauncher.swift.o"
         },
         {
@@ -156,7 +147,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformDialogs.swift.o"
+          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformPickers.swift.o"
         },
         {
           "kind" : "file",
@@ -182,11 +173,10 @@
       "prepareForIndexing" : false,
       "sources" : [
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/AppStore.swift",
-        "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/AppTheme.swift",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/GameLauncher.swift",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/GameScanner.swift",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/Models.swift",
-        "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/PlatformDialogs.swift",
+        "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/PlatformPickers.swift",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/RootView.swift",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/RuntimeInstaller.swift",
         "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/RuntimeManager.swift",
@@ -211,11 +201,10 @@
       "8",
       "-c",
       "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/AppStore.swift",
-      "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/AppTheme.swift",
       "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/GameLauncher.swift",
       "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/GameScanner.swift",
       "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/Models.swift",
-      "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/PlatformDialogs.swift",
+      "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/PlatformPickers.swift",
       "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/RootView.swift",
       "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/RuntimeInstaller.swift",
       "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/RuntimeManager.swift",
@@ -298,10 +287,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/AppTheme.swift"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/GameLauncher.swift"
         },
         {
@@ -314,7 +299,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/PlatformDialogs.swift"
+          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/PlatformPickers.swift"
         },
         {
           "kind" : "file",
@@ -348,10 +333,6 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppTheme.swift.o"
-        },
-        {
-          "kind" : "file",
           "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameLauncher.swift.o"
         },
         {
@@ -364,7 +345,7 @@
         },
         {
           "kind" : "file",
-          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformDialogs.swift.o"
+          "name" : "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformPickers.swift.o"
         },
         {
           "kind" : "file",

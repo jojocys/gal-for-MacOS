@@ -2,103 +2,67 @@ import AppKit
 import Foundation
 
 enum RuntimeManager {
-    struct DetectedPaths {
-        var wineBinary: String?
-        var wineApp: String?
-        var xQuartz: String?
-        var rosettaInstalled: Bool
-        var isAppleSilicon: Bool
-        var wineQuarantined: Bool
-    }
+    static func detect(preferredWineBinaryPath: String, preferredWineAppPath: String) -> RuntimeCheckReport {
+        let wineBinary = resolveWineBinary(preferred: preferredWineBinaryPath) ?? ""
+        let wineApp = resolveWineApp(preferred: preferredWineAppPath) ?? ""
+        let rosettaInstalled = detectRosettaInstalled()
+        let xquartzApp = resolveXQuartzApp() ?? ""
+        let xquartzInstalled = !xquartzApp.isEmpty
+        let gatekeeperBlocked = detectQuarantine(on: !wineApp.isEmpty ? wineApp : inferAppPath(fromWineBinary: wineBinary) ?? "")
 
-    static func detect(userWineBinaryPath: String?, userWineAppPath: String?) -> RuntimeEnvironmentReport {
-        let paths = detectPaths(userWineBinaryPath: userWineBinaryPath, userWineAppPath: userWineAppPath)
-        let cpu = paths.isAppleSilicon ? "Apple Silicon (M系列)" : "Intel / 其他"
+        var items: [RuntimeCheckItem] = []
 
-        var components: [RuntimeComponentStatus] = []
-        components.append(
-            RuntimeComponentStatus(
+        if wineBinary.isEmpty {
+            items.append(RuntimeCheckItem(
                 title: "Wine 引擎",
-                state: paths.wineBinary == nil ? .missing : (paths.wineQuarantined ? .blocked : .ready),
-                summary: paths.wineBinary == nil ? "未检测到 wine64 / wine" : "已检测到 Wine 可执行文件",
-                detail: paths.wineBinary ?? "可在“运行环境”步骤里选择 Wine 可执行文件或 Wine.app"
-            )
-        )
-
-        if paths.isAppleSilicon {
-            components.append(
-                RuntimeComponentStatus(
-                    title: "Rosetta 2（Apple Silicon 建议）",
-                    state: paths.rosettaInstalled ? .ready : .warning,
-                    summary: paths.rosettaInstalled ? "已检测到 Rosetta 相关组件" : "建议安装 Rosetta 2 以提升兼容性",
-                    detail: paths.rosettaInstalled ? "已就绪" : "可在运行环境步骤点击“打开 Rosetta 安装引导”"
-                )
-            )
+                detail: "未检测到 wine/wine64。请在本页下载并安装，或手动指定 Wine。",
+                state: .missing
+            ))
+        } else {
+            let state: RuntimeCheckItem.State = gatekeeperBlocked ? .blocked : .ok
+            items.append(RuntimeCheckItem(
+                title: "Wine 引擎",
+                detail: "已检测到 Wine 执行文件\n\(wineBinary)",
+                state: state
+            ))
         }
 
-        components.append(
-            RuntimeComponentStatus(
-                title: "XQuartz（部分 Wine 场景需要）",
-                state: paths.xQuartz == nil ? .warning : .ready,
-                summary: paths.xQuartz == nil ? "未检测到 XQuartz（部分环境可能需要）" : "已检测到 XQuartz",
-                detail: paths.xQuartz ?? "若启动失败且日志出现显示相关错误，可安装 XQuartz"
-            )
-        )
+        items.append(RuntimeCheckItem(
+            title: "Rosetta 2 (Apple Silicon 建议)",
+            detail: rosettaInstalled ? "已检测到 Rosetta 相关组件" : "未检测到 Rosetta。部分 Wine/游戏需要它。",
+            state: rosettaInstalled ? .ok : .warning
+        ))
 
-        components.append(
-            RuntimeComponentStatus(
-                title: "macOS 安全拦截（Gatekeeper）",
-                state: paths.wineQuarantined ? .blocked : .ready,
-                summary: paths.wineQuarantined ? "检测到 Wine.app 可能仍带隔离标记" : "未检测到明显拦截标记（首次运行仍可能提示）",
-                detail: paths.wineQuarantined ? "可点击“打开隐私与安全性”后允许，或右键 Wine.app 选择“打开”" : "如出现“未打开 Wine Stable”，在系统设置里点“仍要打开”即可"
-            )
-        )
+        items.append(RuntimeCheckItem(
+            title: "XQuartz (部分 Wine 场景需要)",
+            detail: xquartzInstalled ? "已检测到 XQuartz\n\(xquartzApp)" : "未检测到 XQuartz。部分图形环境可能需要。",
+            state: xquartzInstalled ? .ok : .warning
+        ))
 
-        return RuntimeEnvironmentReport(
-            checkedAt: Date(),
-            cpuDescription: cpu,
-            wineBinaryPath: paths.wineBinary,
-            wineAppPath: paths.wineApp,
-            xQuartzPath: paths.xQuartz,
-            components: components
-        )
-    }
+        items.append(RuntimeCheckItem(
+            title: "macOS 安全拦截 (Gatekeeper)",
+            detail: gatekeeperBlocked ? "检测到 Wine.app 可能带隔离标记。先打开系统设置 -> 隐私与安全性 -> 允许。" : "未发现明显拦截标记（首次运行仍可能提示）。",
+            state: gatekeeperBlocked ? .blocked : .ok
+        ))
 
-    static func detectPaths(userWineBinaryPath: String?, userWineAppPath: String?) -> DetectedPaths {
-        let isAppleSilicon = ProcessInfo.processInfo.machineArchitecture == "arm64"
-        let rosettaInstalled = isAppleSilicon ? detectRosettaInstalled() : true
-        let xQuartz = commonXQuartzPaths().first(where: { FileManager.default.fileExists(atPath: $0) })
-
-        let userWineBinary = normalizedExecutable(path: userWineBinaryPath)
-        let userWineApp = normalizedApp(path: userWineAppPath)
-        let bundledFromUserApp = userWineApp.flatMap(resolveWineBinaryPath(inWineApp:))
-
-        let commonWineApp = commonWineAppPaths().first(where: { FileManager.default.fileExists(atPath: $0) })
-        let bundledFromCommonApp = commonWineApp.flatMap(resolveWineBinaryPath(inWineApp:))
-        let pathWine = commandPathForWine()
-
-        let wineBinary = userWineBinary ?? bundledFromUserApp ?? pathWine ?? bundledFromCommonApp
-        let wineApp = userWineApp ?? commonWineApp
-        let wineQuarantined = wineApp.map(hasQuarantineAttribute(appPath:)) ?? false
-
-        return DetectedPaths(
-            wineBinary: wineBinary,
-            wineApp: wineApp,
-            xQuartz: xQuartz,
+        return RuntimeCheckReport(
+            items: items,
+            resolvedWineBinaryPath: wineBinary,
+            detectedWineAppPath: wineApp,
             rosettaInstalled: rosettaInstalled,
-            isAppleSilicon: isAppleSilicon,
-            wineQuarantined: wineQuarantined
+            xquartzInstalled: xquartzInstalled,
+            gatekeeperBlocked: gatekeeperBlocked
         )
     }
 
     static func openWineDownloadPage() {
-        if let url = URL(string: "https://github.com/Gcenx/macOS_Wine_builds/releases") {
+        if let url = URL(string: "https://github.com/Gcenx/macOS_Wine_builds/releases/latest") {
             NSWorkspace.shared.open(url)
         }
     }
 
     static func openXQuartzDownloadPage() {
-        if let url = URL(string: "https://www.xquartz.org/") {
+        if let url = URL(string: "https://github.com/XQuartz/XQuartz/releases/latest") {
             NSWorkspace.shared.open(url)
         }
     }
@@ -110,103 +74,105 @@ enum RuntimeManager {
     }
 
     static func openPrivacySecuritySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security") {
-            NSWorkspace.shared.open(url)
-        }
-    }
-
-    static func revealWineAppInFinder(_ path: String?) {
-        guard let path, !path.isEmpty else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)])
-    }
-
-    static func resolveWineBinaryPath(inWineApp appPath: String) -> String? {
         let candidates = [
-            appPath + "/Contents/Resources/wine/bin/wine64",
-            appPath + "/Contents/Resources/wine/bin/wine",
-            appPath + "/Contents/MacOS/wine64",
-            appPath + "/Contents/MacOS/wine"
+            "x-apple.systempreferences:com.apple.preference.security?Privacy",
+            "x-apple.systempreferences:com.apple.settings.PrivacySecurity.extension"
         ]
-        return candidates.first(where: { FileManager.default.isExecutableFile(atPath: $0) })
+        for raw in candidates {
+            if let url = URL(string: raw), NSWorkspace.shared.open(url) { return }
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
     }
 
-    private static func commonWineAppPaths() -> [String] {
-        [
+    static func resolveWineBinary(preferred: String) -> String? {
+        let fm = FileManager.default
+        if !preferred.isEmpty, fm.isExecutableFile(atPath: preferred) {
+            return preferred
+        }
+
+        let candidates = [
+            "/opt/homebrew/bin/wine64",
+            "/opt/homebrew/bin/wine",
+            "/usr/local/bin/wine64",
+            "/usr/local/bin/wine",
+            "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine64",
+            "/Applications/Wine Stable.app/Contents/Resources/wine/bin/wine"
+        ]
+        if let path = candidates.first(where: { fm.isExecutableFile(atPath: $0) }) { return path }
+
+        if let shellPath = shell("command -v wine64 || command -v wine"), !shellPath.isEmpty { return shellPath }
+        return nil
+    }
+
+    static func resolveWineApp(preferred: String) -> String? {
+        let fm = FileManager.default
+        if !preferred.isEmpty, fm.fileExists(atPath: preferred) { return preferred }
+
+        let common = [
             "/Applications/Wine Stable.app",
-            "/Applications/Wine Devel.app",
-            "/Applications/Wine.app"
+            "/Applications/Wine.app",
+            NSHomeDirectory() + "/Applications/Wine Stable.app",
+            NSHomeDirectory() + "/Applications/Wine.app"
         ]
+        if let path = common.first(where: { fm.fileExists(atPath: $0) }) { return path }
+        return nil
     }
 
-    private static func commonXQuartzPaths() -> [String] {
-        [
+    static func resolveXQuartzApp() -> String? {
+        let paths = [
             "/Applications/Utilities/XQuartz.app",
             "/Applications/XQuartz.app"
         ]
-    }
-
-    private static func normalizedExecutable(path: String?) -> String? {
-        guard let path, !path.isEmpty else { return nil }
-        return FileManager.default.isExecutableFile(atPath: path) ? path : nil
-    }
-
-    private static func normalizedApp(path: String?) -> String? {
-        guard let path, !path.isEmpty else { return nil }
-        return FileManager.default.fileExists(atPath: path) ? path : nil
-    }
-
-    private static func commandPathForWine() -> String? {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
-        process.arguments = ["-lc", "command -v wine64 || command -v wine"]
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        try? process.run()
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        let text = String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return text.isEmpty ? nil : text
+        let fm = FileManager.default
+        return paths.first(where: { fm.fileExists(atPath: $0) })
     }
 
     private static func detectRosettaInstalled() -> Bool {
-        let candidates = [
-            "/Library/Apple/usr/share/rosetta/rosetta",
-            "/Library/Apple/usr/libexec/oah/libRosettaRuntime"
-        ]
-        if candidates.contains(where: { FileManager.default.fileExists(atPath: $0) }) {
+        if let output = shell("/usr/bin/pgrep -q oahd; echo $?"), output.trimmingCharacters(in: .whitespacesAndNewlines) == "0" {
             return true
+        }
+        if let receipt = shell("/usr/sbin/pkgutil --pkg-info com.apple.pkg.RosettaUpdateAuto >/dev/null 2>&1; echo $?") {
+            return receipt.trimmingCharacters(in: .whitespacesAndNewlines) == "0"
         }
         return false
     }
 
-    private static func hasQuarantineAttribute(appPath: String) -> Bool {
+    private static func detectQuarantine(on path: String) -> Bool {
+        guard !path.isEmpty else { return false }
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: path) else { return false }
+        let escaped = path.replacingOccurrences(of: "'", with: "'\\''")
+        if let result = shell("/usr/bin/xattr -p com.apple.quarantine '\(escaped)' >/dev/null 2>&1; echo $?") {
+            return result.trimmingCharacters(in: .whitespacesAndNewlines) == "0"
+        }
+        return false
+    }
+
+    private static func inferAppPath(fromWineBinary path: String) -> String? {
+        guard !path.isEmpty else { return nil }
+        let url = URL(fileURLWithPath: path)
+        let comps = url.pathComponents
+        if let idx = comps.firstIndex(of: "Contents"), idx > 0 {
+            let appPath = comps.prefix(idx).joined(separator: "/")
+            return appPath.hasPrefix("/") ? appPath : "/" + appPath
+        }
+        return nil
+    }
+
+    private static func shell(_ command: String) -> String? {
         let process = Process()
         let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/xattr")
-        process.arguments = ["-p", "com.apple.quarantine", appPath]
+        process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+        process.arguments = ["-lc", command]
         process.standardOutput = pipe
         process.standardError = Pipe()
-        try? process.run()
-        process.waitUntilExit()
-        return process.terminationStatus == 0
+        do {
+            try process.run()
+            process.waitUntilExit()
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            return String(data: data, encoding: .utf8)
+        } catch {
+            return nil
+        }
     }
 }
-
-private extension ProcessInfo {
-    var machineArchitecture: String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/uname")
-        process.arguments = ["-m"]
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        try? process.run()
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
-    }
-}
-

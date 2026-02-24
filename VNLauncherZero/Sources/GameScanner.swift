@@ -1,138 +1,84 @@
 import Foundation
 
 enum GameScanner {
-    static func scan(folderURL: URL) -> GameScanResult {
+    static func scanGameFolder(_ folderURL: URL) -> ScanResult {
         let fm = FileManager.default
-        let resourceKeys: Set<URLResourceKey> = [.isRegularFileKey, .isDirectoryKey, .fileSizeKey]
+        let folderName = folderURL.lastPathComponent.lowercased()
+
         let enumerator = fm.enumerator(
             at: folderURL,
-            includingPropertiesForKeys: Array(resourceKeys),
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
+            includingPropertiesForKeys: [.isRegularFileKey, .isDirectoryKey],
+            options: [.skipsHiddenFiles],
+            errorHandler: { _, _ in true }
         )
 
-        var exeCandidates: [EXECandidate] = []
         var xp3Count = 0
-        var hasRenpy = false
-        var hasUnity = false
-        var notes: [String] = []
-
-        let folderName = folderURL.lastPathComponent.lowercased()
-        let folderTokens = tokenize(folderName)
+        var exeURLs: [URL] = []
 
         while let item = enumerator?.nextObject() as? URL {
-            guard let values = try? item.resourceValues(forKeys: resourceKeys) else { continue }
-            if values.isDirectory == true {
-                if item.pathComponents.count - folderURL.pathComponents.count > 2 {
-                    enumerator?.skipDescendants()
-                }
+            let rel = item.path.replacingOccurrences(of: folderURL.path, with: "")
+            let depth = rel.split(separator: "/").count
+            if depth > 4 {
+                enumerator?.skipDescendants()
                 continue
             }
+
+            guard let values = try? item.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey]) else { continue }
+            if values.isDirectory == true { continue }
             guard values.isRegularFile == true else { continue }
 
             let ext = item.pathExtension.lowercased()
-            let fileName = item.lastPathComponent
-            let lowerName = fileName.lowercased()
-
             if ext == "xp3" { xp3Count += 1 }
-            if lowerName == "renpy.exe" || lowerName.hasSuffix(".rpy") { hasRenpy = true }
-            if lowerName == "unityplayer.dll" || lowerName == "unitycrashhandler64.exe" { hasUnity = true }
-
-            guard ext == "exe" else { continue }
-            let scoreInfo = scoreExecutable(fileName: lowerName, folderTokens: folderTokens, folderName: folderName)
-            let candidate = EXECandidate(path: item.path, score: scoreInfo.score, reason: scoreInfo.reason)
-            exeCandidates.append(candidate)
+            if ext == "exe" { exeURLs.append(item) }
         }
 
-        exeCandidates.sort { lhs, rhs in
-            if lhs.score != rhs.score { return lhs.score > rhs.score }
-            return lhs.fileName.localizedCaseInsensitiveCompare(rhs.fileName) == .orderedAscending
+        let engineHint: String = xp3Count > 0 ? "KiriKiri/XP3" : "未识别"
+
+        let candidates = exeURLs.map { exe in
+            scoreCandidate(exeURL: exe, folderName: folderName)
+        }
+        .sorted {
+            if $0.score == $1.score { return $0.exeURL.lastPathComponent < $1.exeURL.lastPathComponent }
+            return $0.score > $1.score
         }
 
-        let engine: GameEngine = {
-            if xp3Count >= 3 { return .kirikiri }
-            if hasRenpy { return .renpy }
-            if hasUnity { return .unity }
-            return .unknown
-        }()
-
-        if engine == .kirikiri {
-            notes.append("检测到多个 .xp3 资源包，疑似 KiriKiri/XP3。")
-            notes.append("已自动降低 cracktro/setup/config 等可疑启动器优先级。")
-        }
-        if let first = exeCandidates.first {
-            notes.append("推荐主程序：\(URL(fileURLWithPath: first.path).lastPathComponent)")
-        } else {
-            notes.append("未找到 .exe 文件，请确认游戏目录完整。")
-        }
-
-        return GameScanResult(
-            folderPath: folderURL.path,
-            engine: engine,
-            recommendedEXEPath: exeCandidates.first?.path,
-            candidates: exeCandidates,
-            notes: notes,
-            xp3Count: xp3Count
-        )
+        return ScanResult(folderURL: folderURL, engineHint: engineHint, xp3Count: xp3Count, exeCandidates: candidates)
     }
 
-    private static func tokenize(_ text: String) -> [String] {
-        text.split { !$0.isLetter && !$0.isNumber }.map(String.init)
-    }
-
-    private static func scoreExecutable(fileName: String, folderTokens: [String], folderName: String) -> (score: Int, reason: String) {
-        var score = 0
+    private static func scoreCandidate(exeURL: URL, folderName: String) -> ScanCandidate {
+        let name = exeURL.deletingPathExtension().lastPathComponent.lowercased()
+        let file = exeURL.lastPathComponent.lowercased()
+        var score = 100
         var reasons: [String] = []
 
-        let bare = (fileName as NSString).deletingPathExtension
-        let tokens = tokenize(bare)
-
-        if bare == folderName {
-            score += 120
-            reasons.append("与目录名完全匹配")
+        if name == folderName { score += 60; reasons.append("与文件夹同名") }
+        if name.replacingOccurrences(of: " ", with: "") == folderName.replacingOccurrences(of: " ", with: "") {
+            score += 30
+            reasons.append("与文件夹名接近")
         }
 
-        let overlaps = Set(tokens).intersection(folderTokens).count
-        if overlaps > 0 {
-            let delta = overlaps * 25
-            score += delta
-            reasons.append("与目录名相似 +\(delta)")
-        }
-
-        let strongPositive = ["game", "start", "play"]
-        for key in strongPositive where bare.contains(key) {
-            score += 10
-            reasons.append("常见主程序命名")
-        }
-
-        let negativeKeywords: [(String, Int, String)] = [
-            ("crack", -140, "疑似破解辅助程序"),
-            ("tro", -80, "疑似片头/破解程序"),
-            ("cracktro", -200, "疑似破解展示程序"),
-            ("keygen", -200, "序列号生成器"),
-            ("patch", -120, "补丁程序"),
-            ("setup", -120, "安装器"),
-            ("install", -120, "安装器"),
-            ("unins", -160, "卸载程序"),
-            ("uninstall", -160, "卸载程序"),
-            ("config", -80, "配置工具"),
-            ("launcher", -40, "启动器（不一定是主程序）"),
-            ("dxsetup", -200, "运行库安装器")
+        let penalties: [(String, Int, String)] = [
+            ("crack", -90, "疑似破解片头"),
+            ("intro", -70, "疑似片头程序"),
+            ("tro", -70, "疑似片头程序"),
+            ("setup", -100, "安装程序"),
+            ("install", -100, "安装程序"),
+            ("unins", -100, "卸载程序"),
+            ("config", -60, "配置程序"),
+            ("launcher", -35, "通用启动器"),
+            ("dx", -30, "组件工具"),
+            ("patch", -60, "补丁程序")
         ]
-
-        for (key, delta, note) in negativeKeywords where bare.contains(key) {
+        for (needle, delta, desc) in penalties where name.contains(needle) || file.contains(needle) {
             score += delta
-            reasons.append(note)
+            reasons.append(desc)
         }
 
-        if bare.hasSuffix("_config") {
-            score -= 100
-            reasons.append("配置工具")
-        }
+        let depth = exeURL.pathComponents.count
+        score -= min(depth, 20)
+        if name.count <= 20 { score += 10 }
 
-        if reasons.isEmpty {
-            reasons.append("普通 EXE 候选")
-        }
-        return (score, reasons.joined(separator: "，"))
+        if reasons.isEmpty { reasons.append("常规候选") }
+        return ScanCandidate(exeURL: exeURL, score: score, reason: reasons.joined(separator: " / "))
     }
 }
-

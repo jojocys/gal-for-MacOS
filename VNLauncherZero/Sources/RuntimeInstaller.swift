@@ -1,191 +1,115 @@
 import AppKit
 import Foundation
 
-enum RuntimeInstallerError: LocalizedError {
-    case releaseFetchFailed
-    case noSuitableAsset(String)
-    case downloadFailed(String)
-    case fileMoveFailed
+struct RuntimeInstaller {
+    enum InstallerKind {
+        case wine
+        case xquartz
 
-    var errorDescription: String? {
-        switch self {
-        case .releaseFetchFailed:
-            return "无法获取安装包发布信息，请检查网络后重试。"
-        case .noSuitableAsset(let item):
-            return "没有找到适合下载的 \(item) 安装包。"
-        case .downloadFailed(let msg):
-            return "下载安装包失败：\(msg)"
-        case .fileMoveFailed:
-            return "下载完成但无法保存安装包到本地目录。"
+        var displayName: String {
+            switch self {
+            case .wine: return "Wine"
+            case .xquartz: return "XQuartz"
+            }
         }
-    }
-}
 
-enum RuntimeInstallTarget {
-    case wine
-    case xquartz
-}
-
-enum RuntimeInstaller {
-    struct GitHubRelease: Decodable {
-        let tagName: String
-        let assets: [Asset]
-
-        enum CodingKeys: String, CodingKey {
-            case tagName = "tag_name"
-            case assets
+        var fallbackURL: URL {
+            switch self {
+            case .wine:
+                return URL(string: "https://github.com/Gcenx/macOS_Wine_builds/releases/latest")!
+            case .xquartz:
+                return URL(string: "https://github.com/XQuartz/XQuartz/releases/latest")!
+            }
         }
+
+        var candidateRepos: [(owner: String, repo: String)] {
+            switch self {
+            case .wine:
+                return [("Gcenx", "macOS_Wine_builds")]
+            case .xquartz:
+                return [("XQuartz", "XQuartz")]
+            }
+        }
+
+        var allowedExtensions: Set<String> { ["pkg", "dmg"] }
     }
 
-    struct Asset: Decodable {
+    private struct GitHubRelease: Decodable {
+        let assets: [GitHubAsset]
+        let html_url: String
+    }
+
+    private struct GitHubAsset: Decodable {
         let name: String
-        let browserDownloadURL: String
-        let size: Int?
-
-        enum CodingKeys: String, CodingKey {
-            case name
-            case browserDownloadURL = "browser_download_url"
-            case size
-        }
+        let browser_download_url: String
     }
 
-    static func downloadLatestInstaller(
-        _ target: RuntimeInstallTarget,
-        destinationDir: URL,
-        preferredArchitecture: String
-    ) async throws -> URL {
-        try FileManager.default.createDirectory(at: destinationDir, withIntermediateDirectories: true)
-
-        switch target {
-        case .wine:
-            let release = try await fetchLatestRelease(owner: "Gcenx", repo: "macOS_Wine_builds")
-            let asset = chooseWineAsset(from: release.assets, arch: preferredArchitecture)
-                ?? chooseGenericInstallerAsset(from: release.assets)
-            guard let asset else { throw RuntimeInstallerError.noSuitableAsset("Wine") }
-            return try await downloadAsset(asset, destinationDir: destinationDir, prefix: "Wine")
-        case .xquartz:
-            let release = try await fetchLatestRelease(owner: "XQuartz", repo: "XQuartz")
-            let asset = chooseXQuartzAsset(from: release.assets) ?? chooseGenericInstallerAsset(from: release.assets)
-            guard let asset else { throw RuntimeInstallerError.noSuitableAsset("XQuartz") }
-            return try await downloadAsset(asset, destinationDir: destinationDir, prefix: "XQuartz")
-        }
-    }
-
-    static func openInstaller(_ url: URL) {
-        NSWorkspace.shared.open(url)
-    }
-
-    private static func fetchLatestRelease(owner: String, repo: String) async throws -> GitHubRelease {
-        let endpoint = "https://api.github.com/repos/\(owner)/\(repo)/releases/latest"
-        guard let url = URL(string: endpoint) else { throw RuntimeInstallerError.releaseFetchFailed }
-        var request = URLRequest(url: url)
-        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-        request.setValue("VNLauncherZero/0.1", forHTTPHeaderField: "User-Agent")
-
-        let data: Data
-        do {
-            let (d, response) = try await URLSession.shared.data(for: request)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                throw RuntimeInstallerError.releaseFetchFailed
-            }
-            data = d
-        } catch {
-            throw RuntimeInstallerError.downloadFailed(error.localizedDescription)
-        }
-
-        do {
-            let decoder = JSONDecoder()
-            return try decoder.decode(GitHubRelease.self, from: data)
-        } catch {
-            throw RuntimeInstallerError.releaseFetchFailed
-        }
-    }
-
-    private static func downloadAsset(_ asset: Asset, destinationDir: URL, prefix: String) async throws -> URL {
-        guard let url = URL(string: asset.browserDownloadURL) else {
-            throw RuntimeInstallerError.downloadFailed("下载地址无效")
-        }
-
-        let tempURL: URL
-        do {
-            var request = URLRequest(url: url)
-            request.setValue("VNLauncherZero/0.1", forHTTPHeaderField: "User-Agent")
-            let (downloadedURL, response) = try await URLSession.shared.download(for: request)
-            if let http = response as? HTTPURLResponse, !(200...299).contains(http.statusCode) {
-                throw RuntimeInstallerError.downloadFailed("HTTP \(http.statusCode)")
-            }
-            tempURL = downloadedURL
-        } catch {
-            throw RuntimeInstallerError.downloadFailed(error.localizedDescription)
-        }
-
-        let safeName = sanitizeFileName(asset.name)
-        let targetURL = uniqueDestinationURL(
-            in: destinationDir,
-            preferredName: safeName.isEmpty ? "\(prefix)-Installer.pkg" : safeName
-        )
-        do {
-            if FileManager.default.fileExists(atPath: targetURL.path) {
-                try FileManager.default.removeItem(at: targetURL)
-            }
-            try FileManager.default.moveItem(at: tempURL, to: targetURL)
-            return targetURL
-        } catch {
-            throw RuntimeInstallerError.fileMoveFailed
-        }
-    }
-
-    private static func chooseWineAsset(from assets: [Asset], arch: String) -> Asset? {
-        let normalizedArch = arch.lowercased()
-        let installers = assets.filter { isInstallerAssetName($0.name) && $0.name.lowercased().contains("wine") }
-        guard !installers.isEmpty else { return nil }
-
-        let preferredKeywords: [String]
-        if normalizedArch.contains("arm") {
-            preferredKeywords = ["arm64", "apple", "silicon", "universal"]
-        } else {
-            preferredKeywords = ["x86_64", "intel", "universal"]
-        }
-
-        for key in preferredKeywords {
-            if let asset = installers.first(where: { $0.name.lowercased().contains(key) }) {
-                return asset
-            }
-        }
-        return installers.first
-    }
-
-    private static func chooseXQuartzAsset(from assets: [Asset]) -> Asset? {
-        let installers = assets.filter { isInstallerAssetName($0.name) && $0.name.lowercased().contains("xquartz") }
-        return installers.first ?? assets.first(where: { isInstallerAssetName($0.name) })
-    }
-
-    private static func chooseGenericInstallerAsset(from assets: [Asset]) -> Asset? {
-        assets.first(where: { isInstallerAssetName($0.name) })
-    }
-
-    private static func isInstallerAssetName(_ name: String) -> Bool {
-        let lower = name.lowercased()
-        return lower.hasSuffix(".pkg") || lower.hasSuffix(".dmg")
-    }
-
-    private static func sanitizeFileName(_ name: String) -> String {
-        name.replacingOccurrences(of: "/", with: "_")
-    }
-
-    private static func uniqueDestinationURL(in dir: URL, preferredName: String) -> URL {
+    static func downloadLatestInstaller(kind: InstallerKind) async throws -> InstallerDownloadResult {
         let fm = FileManager.default
-        var candidate = dir.appendingPathComponent(preferredName)
-        if !fm.fileExists(atPath: candidate.path) { return candidate }
-        let base = candidate.deletingPathExtension().lastPathComponent
-        let ext = candidate.pathExtension
-        var i = 2
-        while true {
-            let name = ext.isEmpty ? "\(base)-\(i)" : "\(base)-\(i).\(ext)"
-            candidate = dir.appendingPathComponent(name)
-            if !fm.fileExists(atPath: candidate.path) { return candidate }
-            i += 1
+        let dir = fm.homeDirectoryForCurrentUser
+            .appendingPathComponent(".vnlauncher", isDirectory: true)
+            .appendingPathComponent("downloads", isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let session = URLSession(configuration: .default)
+        var selectedAssetURL: URL?
+
+        for repo in kind.candidateRepos {
+            let apiURL = URL(string: "https://api.github.com/repos/\(repo.owner)/\(repo.repo)/releases/latest")!
+            var req = URLRequest(url: apiURL)
+            req.setValue("GAL-FOR-MacOS/1.0", forHTTPHeaderField: "User-Agent")
+            do {
+                let (data, response) = try await session.data(for: req)
+                guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { continue }
+                let release = try JSONDecoder().decode(GitHubRelease.self, from: data)
+                if let asset = chooseAsset(from: release.assets, kind: kind) {
+                    selectedAssetURL = URL(string: asset.browser_download_url)
+                    break
+                }
+            } catch {
+                continue
+            }
         }
+
+        guard let sourceURL = selectedAssetURL else {
+            NSWorkspace.shared.open(kind.fallbackURL)
+            throw NSError(domain: "RuntimeInstaller", code: 1, userInfo: [NSLocalizedDescriptionKey: "未找到可下载安装包，已为你打开官方发布页。"])
+        }
+
+        var downloadReq = URLRequest(url: sourceURL)
+        downloadReq.setValue("GAL-FOR-MacOS/1.0", forHTTPHeaderField: "User-Agent")
+        let (tmpURL, response) = try await session.download(for: downloadReq)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw NSError(domain: "RuntimeInstaller", code: 2, userInfo: [NSLocalizedDescriptionKey: "下载安装包失败（网络或服务器返回异常）。"])
+        }
+
+        let targetURL = dir.appendingPathComponent(sourceURL.lastPathComponent)
+        try? fm.removeItem(at: targetURL)
+        try fm.moveItem(at: tmpURL, to: targetURL)
+        NSWorkspace.shared.open(targetURL)
+        return InstallerDownloadResult(downloadedFileURL: targetURL, sourceURL: sourceURL)
+    }
+
+    private static func chooseAsset(from assets: [GitHubAsset], kind: InstallerKind) -> GitHubAsset? {
+        let filtered = assets.filter { asset in
+            let ext = URL(fileURLWithPath: asset.name).pathExtension.lowercased()
+            return kind.allowedExtensions.contains(ext)
+        }
+
+        let scored = filtered.map { asset -> (GitHubAsset, Int) in
+            let name = asset.name.lowercased()
+            var score = 0
+            if name.contains("mac") || name.contains("osx") || name.contains("darwin") { score += 30 }
+            if name.contains("arm64") || name.contains("apple") || name.contains("silicon") { score += 20 }
+            if name.contains("stable") { score += 10 }
+            if name.contains("debug") { score -= 20 }
+            if name.contains("symbols") { score -= 50 }
+            return (asset, score)
+        }
+
+        return scored.sorted { lhs, rhs in
+            if lhs.1 == rhs.1 { return lhs.0.name < rhs.0.name }
+            return lhs.1 > rhs.1
+        }.first?.0
     }
 }
-

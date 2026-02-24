@@ -1,110 +1,95 @@
 import Foundation
 
-enum LaunchError: LocalizedError {
-    case noWine
-    case noEXE
+enum GameLauncherError: LocalizedError {
+    case gameNotConfigured
+    case gameFolderMissing
     case exeMissing
-    case cannotCreatePrefix
-    case cannotCreateLog
-    case processLaunchFailed(String)
+    case prefixCreateFailed
+    case wineNotFound
+    case logCreateFailed
 
     var errorDescription: String? {
         switch self {
-        case .noWine:
-            return "未检测到 Wine，可先去 P2 运行环境步骤完成安装/选择。"
-        case .noEXE:
-            return "当前没有可启动的 EXE。请先在 P1 选择游戏文件夹并确认推荐主程序。"
-        case .exeMissing:
-            return "推荐的 EXE 文件不存在，可能目录被移动或删除。"
-        case .cannotCreatePrefix:
-            return "无法创建游戏运行环境（Wine Prefix）目录。"
-        case .cannotCreateLog:
-            return "无法创建日志文件。"
-        case .processLaunchFailed(let msg):
-            return "启动进程失败：\(msg)"
+        case .gameNotConfigured: return "请先在 P1 选择游戏文件夹并确认主程序。"
+        case .gameFolderMissing: return "游戏目录不存在。"
+        case .exeMissing: return "主程序 EXE 不存在。"
+        case .prefixCreateFailed: return "无法创建 Wine Prefix 文件夹。"
+        case .wineNotFound: return "未找到 Wine。请先在 P2 安装或手动指定 Wine。"
+        case .logCreateFailed: return "无法创建日志文件。"
         }
     }
 }
 
 enum GameLauncher {
-    static func launch(
-        profile: SavedGameProfile,
-        runtimeReport: RuntimeEnvironmentReport,
-        userWineBinaryPath: String?,
-        userWineAppPath: String?,
-        logsDir: URL
-    ) throws -> URL {
+    static func launch(game: GameEntry, logsDir: URL, preferredWineBinaryPath: String) throws -> URL {
+        guard let exeURL = game.exeURL else { throw GameLauncherError.gameNotConfigured }
+        guard let folderURL = game.folderURL else { throw GameLauncherError.gameFolderMissing }
         let fm = FileManager.default
-        guard !profile.exePath.isEmpty else { throw LaunchError.noEXE }
-        guard fm.fileExists(atPath: profile.exePath) else { throw LaunchError.exeMissing }
+        guard fm.fileExists(atPath: folderURL.path) else { throw GameLauncherError.gameFolderMissing }
+        guard fm.fileExists(atPath: exeURL.path) else { throw GameLauncherError.exeMissing }
 
-        let paths = RuntimeManager.detectPaths(userWineBinaryPath: userWineBinaryPath, userWineAppPath: userWineAppPath)
-        guard let wineBinary = paths.wineBinary ?? runtimeReport.wineBinaryPath else { throw LaunchError.noWine }
+        let prefixURL: URL
+        if let existingPrefix = game.prefixURL {
+            prefixURL = existingPrefix
+        } else {
+            throw GameLauncherError.gameNotConfigured
+        }
 
         do {
-            try fm.createDirectory(at: profile.prefixURL, withIntermediateDirectories: true)
+            try fm.createDirectory(at: prefixURL, withIntermediateDirectories: true)
+            try fm.createDirectory(at: logsDir, withIntermediateDirectories: true)
         } catch {
-            throw LaunchError.cannotCreatePrefix
+            throw GameLauncherError.prefixCreateFailed
         }
-        try fm.createDirectory(at: logsDir, withIntermediateDirectories: true)
 
-        let logURL = logsDir.appendingPathComponent(logFileName(for: profile))
+        guard let wineBinary = RuntimeManager.resolveWineBinary(preferred: preferredWineBinaryPath) else {
+            throw GameLauncherError.wineNotFound
+        }
+
+        let logURL = logsDir.appendingPathComponent(logFileName(for: game))
         guard fm.createFile(atPath: logURL.path, contents: nil) || fm.fileExists(atPath: logURL.path) else {
-            throw LaunchError.cannotCreateLog
+            throw GameLauncherError.logCreateFailed
         }
 
-        appendLogHeader(logURL: logURL, profile: profile, wineBinary: wineBinary)
-
-        do {
-            let handle = try FileHandle(forWritingTo: logURL)
-            try handle.seekToEnd()
-
-            let process = Process()
-            process.executableURL = URL(fileURLWithPath: wineBinary)
-            process.arguments = [profile.exePath]
-            process.currentDirectoryURL = profile.exeURL.deletingLastPathComponent()
-
-            var env = ProcessInfo.processInfo.environment
-            env["WINEPREFIX"] = profile.prefixPath
-            env["WINEDEBUG"] = "-all"
-            env["LANG"] = "ja_JP.UTF-8"
-            env["LC_ALL"] = "ja_JP.UTF-8"
-            process.environment = env
-            process.standardOutput = handle
-            process.standardError = handle
-            process.terminationHandler = { _ in
-                try? handle.close()
-            }
-
-            try process.run()
-        } catch {
-            throw LaunchError.processLaunchFailed(error.localizedDescription)
-        }
-
-        return logURL
-    }
-
-    private static func appendLogHeader(logURL: URL, profile: SavedGameProfile, wineBinary: String) {
-        let lines = [
-            "[\(Date())] Starting VN",
-            "NAME=\(profile.name)",
-            "ENGINE=\(profile.engine.rawValue)",
-            "FOLDER=\(profile.folderPath)",
-            "EXE=\(profile.exePath)",
-            "PREFIX=\(profile.prefixPath)",
+        let prelude = [
+            "[\(Date())] Launch request",
+            "GAME=\(game.name)",
+            "FOLDER=\(folderURL.path)",
+            "EXE=\(exeURL.path)",
+            "PREFIX=\(prefixURL.path)",
             "WINE=\(wineBinary)",
             ""
         ].joined(separator: "\n")
-        if let data = lines.data(using: .utf8) {
+        if let data = prelude.data(using: .utf8) {
             try? data.append(to: logURL)
         }
+
+        let fileHandle = try FileHandle(forWritingTo: logURL)
+        try fileHandle.seekToEnd()
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: wineBinary)
+        process.arguments = [exeURL.path]
+        process.currentDirectoryURL = folderURL
+        var env = ProcessInfo.processInfo.environment
+        env["WINEPREFIX"] = prefixURL.path
+        env["WINEDEBUG"] = "-all"
+        env["LANG"] = "ja_JP.UTF-8"
+        env["LC_ALL"] = "ja_JP.UTF-8"
+        process.environment = env
+        process.standardOutput = fileHandle
+        process.standardError = fileHandle
+        process.terminationHandler = { _ in try? fileHandle.close() }
+
+        try process.run()
+        return logURL
     }
 
-    private static func logFileName(for profile: SavedGameProfile) -> String {
+    private static func logFileName(for game: GameEntry) -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let safeName = profile.name.replacingOccurrences(of: "/", with: "_")
-        return "\(safeName)-\(formatter.string(from: Date())).log"
+        let safe = game.name.replacingOccurrences(of: "/", with: "_")
+        return "\(safe)-\(formatter.string(from: Date())).log"
     }
 }
 
@@ -119,4 +104,3 @@ private extension Data {
         }
     }
 }
-

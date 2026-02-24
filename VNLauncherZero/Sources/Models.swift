@@ -1,109 +1,116 @@
 import Foundation
 
-enum GameEngine: String, Codable, CaseIterable {
-    case kirikiri = "KiriKiri/XP3"
-    case renpy = "Ren'Py"
-    case unity = "Unity"
-    case unknown = "未知"
-}
-
-struct EXECandidate: Identifiable, Codable, Hashable {
-    var id: UUID = UUID()
-    var path: String
-    var score: Int
-    var reason: String
-
-    var fileName: String {
-        URL(fileURLWithPath: path).lastPathComponent
-    }
-}
-
-struct GameScanResult: Codable {
-    var folderPath: String
-    var engine: GameEngine
-    var recommendedEXEPath: String?
-    var candidates: [EXECandidate]
-    var notes: [String]
-    var xp3Count: Int
-}
-
-struct SavedGameProfile: Identifiable, Codable, Hashable {
-    var id: UUID = UUID()
+struct GameEntry: Identifiable, Codable, Hashable {
+    var id: UUID
     var name: String
-    var folderPath: String
+    var gameFolderPath: String
     var exePath: String
-    var prefixPath: String
-    var engine: GameEngine
+    var prefixDir: String
+    var engineHint: String
     var notes: String
-    var createdAt: Date = Date()
-    var updatedAt: Date = Date()
+    var createdAt: Date
+    var updatedAt: Date
 
-    var folderURL: URL { URL(fileURLWithPath: folderPath) }
-    var exeURL: URL { URL(fileURLWithPath: exePath) }
-    var prefixURL: URL { URL(fileURLWithPath: prefixPath) }
+    init(
+        id: UUID = UUID(),
+        name: String,
+        gameFolderPath: String = "",
+        exePath: String = "",
+        prefixDir: String = "",
+        engineHint: String = "未识别",
+        notes: String = "",
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.name = name
+        self.gameFolderPath = gameFolderPath
+        self.exePath = exePath
+        self.prefixDir = prefixDir
+        self.engineHint = engineHint
+        self.notes = notes
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    var folderURL: URL? {
+        guard !gameFolderPath.isEmpty else { return nil }
+        return URL(fileURLWithPath: gameFolderPath)
+    }
+
+    var exeURL: URL? {
+        guard !exePath.isEmpty else { return nil }
+        return URL(fileURLWithPath: exePath)
+    }
+
+    var prefixURL: URL? {
+        guard !prefixDir.isEmpty else { return nil }
+        return URL(fileURLWithPath: prefixDir)
+    }
+
     var displaySubtitle: String {
-        let exe = exeURL.lastPathComponent
-        if exe.isEmpty { return folderURL.lastPathComponent }
-        return exe
+        if let exeURL { return exeURL.lastPathComponent }
+        if let folderURL { return folderURL.lastPathComponent }
+        return "未配置"
     }
 }
 
-enum ComponentState: String, Codable {
-    case ready
-    case missing
-    case warning
-    case blocked
-    case unknown
+struct GameStoreFile: Codable {
+    var selectedGameID: UUID?
+    var games: [GameEntry]
+    var preferredWineBinaryPath: String
+    var preferredWineAppPath: String
+}
 
-    var title: String {
-        switch self {
-        case .ready: return "就绪"
-        case .missing: return "缺失"
-        case .warning: return "建议处理"
-        case .blocked: return "被拦截"
-        case .unknown: return "未知"
+struct ScanCandidate: Identifiable, Hashable {
+    let id = UUID()
+    let exeURL: URL
+    let score: Int
+    let reason: String
+}
+
+struct ScanResult {
+    let folderURL: URL
+    let engineHint: String
+    let xp3Count: Int
+    let exeCandidates: [ScanCandidate]
+
+    var recommendedEXE: URL? { exeCandidates.first?.exeURL }
+}
+
+struct RuntimeCheckItem: Identifiable {
+    enum State {
+        case ok
+        case warning
+        case missing
+        case blocked
+
+        var label: String {
+            switch self {
+            case .ok: return "就绪"
+            case .warning: return "需注意"
+            case .missing: return "未安装"
+            case .blocked: return "被拦截"
+            }
         }
     }
+
+    let id = UUID()
+    let title: String
+    let detail: String
+    let state: State
 }
 
-struct RuntimeComponentStatus: Codable {
-    var title: String
-    var state: ComponentState
-    var summary: String
-    var detail: String
+struct RuntimeCheckReport {
+    var items: [RuntimeCheckItem]
+    var resolvedWineBinaryPath: String
+    var detectedWineAppPath: String
+    var rosettaInstalled: Bool
+    var xquartzInstalled: Bool
+    var gatekeeperBlocked: Bool
 }
 
-struct RuntimeEnvironmentReport: Codable {
-    var checkedAt: Date
-    var cpuDescription: String
-    var wineBinaryPath: String?
-    var wineAppPath: String?
-    var xQuartzPath: String?
-    var components: [RuntimeComponentStatus]
-
-    static var empty: RuntimeEnvironmentReport {
-        .init(
-            checkedAt: Date(),
-            cpuDescription: "未检测",
-            wineBinaryPath: nil,
-            wineAppPath: nil,
-            xQuartzPath: nil,
-            components: []
-        )
-    }
+struct InstallerDownloadResult {
+    let downloadedFileURL: URL
+    let sourceURL: URL
 }
-
-struct AppStoreFile: Codable {
-    var selectedGameID: UUID?
-    var games: [SavedGameProfile]
-    var userWineBinaryPath: String?
-    var userWineAppPath: String?
-    var lastGameFolderPath: String?
-}
-
-enum WizardStep: String, CaseIterable {
-    case p1 = "P1 选择游戏"
-    case p2 = "P2 运行环境"
-    case p3 = "P3 启动与导出"
-}
-

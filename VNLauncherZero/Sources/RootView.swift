@@ -7,105 +7,556 @@ struct RootView: View {
 
     var body: some View {
         NavigationSplitView {
-            SidebarPanel(store: store, showDeleteConfirm: $showDeleteConfirm)
-                .navigationSplitViewColumnWidth(min: 280, ideal: 300, max: 360)
+            sidebar
         } detail: {
-            ZStack {
-                AppTheme.backgroundGradient.ignoresSafeArea()
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
-                        HeroHeader(store: store)
-                        P1GameSelectionCard(store: store)
-                        P2RuntimeCard(store: store)
-                        P3LaunchCard(store: store)
-                    }
-                    .padding(20)
-                    .frame(maxWidth: 980, alignment: .leading)
-                }
-            }
+            detail
         }
         .navigationSplitViewStyle(.balanced)
-        .confirmationDialog("删除当前游戏配置？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
+        .frame(minWidth: 1200, minHeight: 760)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button {
+                    store.addEmptyGame()
+                } label: {
+                    Image(systemName: "plus")
+                }
+                .help("新建配置")
+
+                Button {
+                    store.chooseEXEManually()
+                } label: {
+                    Image(systemName: "doc.badge.plus")
+                }
+                .help("手动选择 EXE")
+
+                Button {
+                    store.startGame()
+                } label: {
+                    Image(systemName: "play.fill")
+                }
+                .help("启动")
+
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    Image(systemName: "trash")
+                }
+                .help("删除当前配置")
+                .disabled(store.selectedGame == nil)
+            }
+        }
+        .confirmationDialog("删除当前配置？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("删除", role: .destructive) { store.removeSelectedGame() }
             Button("取消", role: .cancel) {}
         } message: {
-            Text("只删除启动器中的配置，不会删除游戏文件。")
+            Text("只删除配置记录，不删除游戏文件。")
         }
     }
-}
 
-private struct SidebarPanel: View {
-    @ObservedObject var store: AppStore
-    @Binding var showDeleteConfirm: Bool
-
-    var body: some View {
-        ZStack {
-            AppTheme.backgroundGradient.ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 14) {
+    private var sidebar: some View {
+        VStack(spacing: 0) {
+            VStack(alignment: .leading, spacing: 8) {
                 Text("已保存游戏")
-                    .font(.title3.weight(.semibold))
+                    .font(.title3.bold())
                     .foregroundStyle(.white)
-                    .padding(.top, 4)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.top, 22)
+            .padding(.bottom, 14)
 
-                List(selection: selectionBinding) {
-                    ForEach(store.games) { game in
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(game.name.isEmpty ? "未命名游戏" : game.name)
-                                .font(.headline)
-                                .lineLimit(1)
-                            Text(game.displaySubtitle)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .lineLimit(1)
-                            Text(game.engine.rawValue)
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        }
-                        .padding(.vertical, 4)
-                        .tag(game.id)
-                        .listRowBackground(Color.clear)
+            List(selection: selectionBinding) {
+                ForEach(store.games) { game in
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text(game.name)
+                            .font(.headline)
+                            .lineLimit(2)
+                        Text(game.displaySubtitle)
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                        Text(game.engineHint)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
                     }
+                    .padding(.vertical, 5)
+                    .tag(game.id)
                 }
-                .scrollContentBackground(.hidden)
-                .background(.clear)
+            }
+            .listStyle(.sidebar)
 
-                VStack(spacing: 10) {
-                    Button {
-                        store.selectedWizardStep = .p1
-                        store.chooseAndScanGameFolder()
-                    } label: {
-                        Label("添加游戏文件夹", systemImage: "folder.badge.plus")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.accent)
-
-                    Button {
-                        store.revealSelectedGameFolder()
-                    } label: {
-                        Text("打开游戏文件夹")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(store.selectedGame == nil)
-
-                    Button(role: .destructive) {
-                        showDeleteConfirm = true
-                    } label: {
-                        Text("删除当前配置")
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(store.selectedGame == nil)
+            VStack(spacing: 10) {
+                Button {
+                    store.chooseAndScanGameFolder()
+                } label: {
+                    Label("添加游戏文件夹", systemImage: "folder.badge.plus")
+                        .frame(maxWidth: .infinity)
                 }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(Color.green.opacity(0.85))
 
-                Spacer(minLength: 0)
+                Button {
+                    store.openSelectedGameFolder()
+                } label: {
+                    Text("打开游戏文件夹")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
 
+                Button(role: .destructive) {
+                    showDeleteConfirm = true
+                } label: {
+                    Text("删除当前配置")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(store.selectedGame == nil)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(14)
+            .background(
+                RoundedRectangle(cornerRadius: 12, style: .continuous)
+                    .fill(Color.white.opacity(0.03))
+            )
+            .padding(.horizontal, 10)
+            .padding(.top, 6)
+
+            HStack {
                 Text("共 \(store.games.count) 个配置")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                Spacer()
+                Button("刷新") {
+                    store.load()
+                    store.refreshRuntimeStatus()
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
             }
-            .padding(16)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 12)
+        }
+        .frame(minWidth: 360)
+        .background(
+            LinearGradient(
+                colors: [Color(red: 0.03, green: 0.08, blue: 0.2), Color.black],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+        )
+    }
+
+    private var detail: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color(red: 0.08, green: 0.11, blue: 0.17), Color.black],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+
+            ScrollView {
+                VStack(spacing: 22) {
+                    heroCard
+                    p1Card
+                    p2Card
+                    p3Card
+                }
+                .padding(20)
+            }
+        }
+    }
+
+    private var heroCard: some View {
+        card {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("GAL FOR MacOS")
+                        .font(.system(size: 34, weight: .bold, design: .rounded))
+                        .foregroundStyle(.white)
+                    Text("选择游戏文件夹 -> 检查运行环境 -> 一键启动")
+                        .font(.title3.weight(.semibold))
+                        .foregroundStyle(.white.opacity(0.85))
+
+                    HStack(spacing: 14) {
+                        stepPill("P1", "选择游戏")
+                        stepPill("P2", "运行环境")
+                        stepPill("P3", "启动与导出")
+                    }
+                    .padding(.top, 8)
+                }
+                Spacer(minLength: 12)
+                Button {
+                    store.openRepairGuide()
+                } label: {
+                    Label("一键修复引导", systemImage: "wand.and.stars")
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.orange.opacity(0.9))
+            }
+        }
+    }
+
+    private func stepPill(_ left: String, _ right: String) -> some View {
+        HStack(spacing: 10) {
+            Text(left)
+                .font(.headline.monospaced())
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 6)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+            Text(right)
+                .font(.headline)
+                .foregroundStyle(.white.opacity(0.95))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
+        .background(
+            Capsule().fill(Color.white.opacity(0.06))
+        )
+        .overlay(
+            Capsule().stroke(Color.white.opacity(0.05), lineWidth: 1)
+        )
+    }
+
+    private var p1Card: some View {
+        card {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .center) {
+                    Text("1")
+                        .font(.caption.bold())
+                        .foregroundStyle(.black)
+                        .padding(6)
+                        .background(Circle().fill(Color.orange))
+                    Text("P1 选择游戏文件夹（自动识别主程序）")
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                    Spacer()
+                    if let scan = store.scanResult {
+                        VStack(alignment: .trailing, spacing: 6) {
+                            statBadge("识别引擎", scan.engineHint)
+                            statBadge("XP3 数量", "\(scan.xp3Count)")
+                            statBadge("候选 EXE", "\(scan.exeCandidates.count)")
+                        }
+                    } else {
+                        VStack(alignment: .trailing, spacing: 6) {
+                            statBadge("识别引擎", "未识别")
+                            statBadge("XP3 数量", "-")
+                            statBadge("候选 EXE", "-")
+                        }
+                    }
+                }
+
+                Text("推荐做法：直接选择整个游戏目录，启动器会自动扫描 .exe 并优先推荐真正的主程序。")
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.85))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("配置名称（可自定义）")
+                        .font(.headline)
+                        .foregroundStyle(.white.opacity(0.7))
+                    TextField(
+                        "例如：Senren Banka",
+                        text: Binding(
+                            get: { store.selectedGame?.name ?? "" },
+                            set: { store.renameSelectedGame($0) }
+                        )
+                    )
+                    .textFieldStyle(.roundedBorder)
+                }
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("当前目录")
+                        .font(.headline)
+                        .foregroundStyle(.white.opacity(0.7))
+                    Text(store.selectedGame?.gameFolderPath.isEmpty == false ? (store.selectedGame?.gameFolderPath ?? "") : "尚未选择")
+                        .font(.system(.body, design: .monospaced))
+                        .foregroundStyle(.white)
+                        .textSelection(.enabled)
+                        .lineLimit(2)
+                }
+
+                HStack(spacing: 10) {
+                    Button {
+                        store.chooseAndScanGameFolder()
+                    } label: {
+                        Label("选择游戏文件夹", systemImage: "folder")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.green.opacity(0.8))
+
+                    Button {
+                        store.rescanCurrentFolder()
+                    } label: {
+                        Label("重新扫描", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+
+                    Button {
+                        store.chooseEXEManually()
+                    } label: {
+                        Label("手动选择 EXE", systemImage: "doc")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                if let scan = store.scanResult {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("推荐主程序候选")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        ForEach(Array(scan.exeCandidates.prefix(5))) { candidate in
+                            HStack(alignment: .top, spacing: 10) {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(candidate.exeURL.lastPathComponent)
+                                        .font(.headline)
+                                        .foregroundStyle(.white)
+                                    Text(candidate.reason)
+                                        .font(.caption)
+                                        .foregroundStyle(.white.opacity(0.65))
+                                    Text(candidate.exeURL.path)
+                                        .font(.system(.caption, design: .monospaced))
+                                        .foregroundStyle(.white.opacity(0.55))
+                                        .lineLimit(1)
+                                }
+                                Spacer()
+                                Text("\(candidate.score)")
+                                    .font(.system(.body, design: .monospaced).bold())
+                                    .foregroundStyle(.white.opacity(0.8))
+                                Button("选用") { store.applyRecommendedCandidate(candidate) }
+                                    .buttonStyle(.bordered)
+                            }
+                            .padding(10)
+                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+                        }
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    pathRow(title: "推荐 EXE", value: store.selectedGame?.exePath ?? "") {
+                        Button("选择 EXE") { store.chooseEXEManually() }.buttonStyle(.bordered)
+                    }
+                    pathRow(title: "Wine Prefix", value: store.selectedGame?.prefixDir ?? "") {
+                        Button("选择 Prefix") { store.choosePrefixFolder() }.buttonStyle(.bordered)
+                    }
+                }
+
+                HStack {
+                    Button {
+                        store.saveCurrentFromP1()
+                    } label: {
+                        Label("保存到游戏列表（进入 P2）", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .tint(Color.blue.opacity(0.75))
+
+                    Spacer()
+                }
+            }
+        }
+    }
+
+    private var p2Card: some View {
+        card {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("2")
+                        .font(.caption.bold())
+                        .foregroundStyle(.black)
+                        .padding(6)
+                        .background(Circle().fill(Color.orange))
+                    Text("P2 运行环境（无需命令行，图形化引导）")
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                    Spacer()
+                    Button {
+                        store.refreshRuntimeStatus()
+                    } label: {
+                        Label("重新检测", systemImage: "arrow.clockwise")
+                    }
+                    .buttonStyle(.bordered)
+                }
+
+                Text("这里会检测 Wine / Rosetta / XQuartz / Gatekeeper。你可以直接点按钮打开官网或系统设置，不需要终端命令。")
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.85))
+
+                if !store.downloadStatusText.isEmpty {
+                    Text(store.downloadStatusText)
+                        .font(.callout)
+                        .foregroundStyle(.white.opacity(0.9))
+                        .padding(10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
+                }
+
+                ForEach(store.runtimeReport.items) { item in
+                    HStack(alignment: .top, spacing: 12) {
+                        Circle()
+                            .fill(color(for: item.state))
+                            .frame(width: 14, height: 14)
+                            .padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(item.title)
+                                .font(.headline)
+                                .foregroundStyle(.white)
+                            Text(item.detail)
+                                .font(.subheadline)
+                                .foregroundStyle(.white.opacity(0.72))
+                        }
+                        Spacer()
+                        Text(item.state.label)
+                            .font(.headline)
+                            .foregroundStyle(color(for: item.state))
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
+                }
+
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Button("下载并打开 Wine 安装包") { store.downloadAndOpenWineInstaller() }
+                            .buttonStyle(.borderedProminent)
+                            .disabled(store.isDownloadingInstaller)
+                        Button("下载并打开 XQuartz 安装包") { store.downloadAndOpenXQuartzInstaller() }
+                            .buttonStyle(.bordered)
+                            .disabled(store.isDownloadingInstaller)
+                        Button("复制终端安装命令") { store.copyTerminalInstallCommands() }
+                            .buttonStyle(.bordered)
+                    }
+
+                    HStack(spacing: 10) {
+                        Button("打开 Wine 下载页") { store.openWineDownloadPage() }.buttonStyle(.bordered)
+                        Button("打开 XQuartz 官网") { store.openXQuartzDownloadPage() }.buttonStyle(.bordered)
+                        Button("打开 Rosetta 安装说明") { store.openRosettaGuide() }.buttonStyle(.bordered)
+                    }
+
+                    HStack(spacing: 10) {
+                        Button("打开“隐私与安全性”") { store.openPrivacySettings() }.buttonStyle(.bordered)
+                        Button("手动选择 Wine.app") { store.chooseWineApp() }.buttonStyle(.bordered)
+                        Button("手动选择 Wine 可执行文件") { store.chooseWineBinary() }.buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+    }
+
+    private var p3Card: some View {
+        card {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("3")
+                        .font(.caption.bold())
+                        .foregroundStyle(.black)
+                        .padding(6)
+                        .background(Circle().fill(Color.orange))
+                    Text("P3 启动游戏")
+                        .font(.title2.bold())
+                        .foregroundStyle(.white)
+                    Spacer()
+                }
+
+                Text("确认 P1 已识别主程序、P2 已安装 Wine 后，点击下方按钮开始游戏。首次启动可能会稍慢。")
+                    .font(.headline)
+                    .foregroundStyle(.white.opacity(0.85))
+
+                if let game = store.selectedGame {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("当前配置：\(game.name)")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text("EXE：\(game.exePath.isEmpty ? "尚未选择" : game.exePath)")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.7))
+                            .lineLimit(2)
+                    }
+                    .padding(12)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
+                }
+
+                Button {
+                    store.startGame()
+                } label: {
+                    Label("开始游戏", systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(Color.blue.opacity(0.9))
+
+                HStack(spacing: 10) {
+                    Button("打开日志") { store.openLastLog() }
+                        .buttonStyle(.bordered)
+                        .disabled(store.lastLogPath.isEmpty)
+                    Button("在 Finder 中打开游戏目录") { store.openSelectedGameFolder() }
+                        .buttonStyle(.bordered)
+                }
+            }
+        }
+    }
+
+    private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        content()
+            .padding(18)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .fill(
+                        LinearGradient(
+                            colors: [Color.white.opacity(0.05), Color.white.opacity(0.02)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 20, style: .continuous)
+                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+            )
+    }
+
+    private func statBadge(_ title: String, _ value: String) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .foregroundStyle(.white.opacity(0.65))
+            Text(value)
+                .foregroundStyle(.white)
+                .fontWeight(.semibold)
+        }
+        .font(.caption)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(Color.white.opacity(0.05)))
+    }
+
+    private func pathRow<Trailing: View>(title: String, value: String, @ViewBuilder trailing: () -> Trailing) -> some View {
+        HStack(spacing: 10) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.white.opacity(0.8))
+                .frame(width: 92, alignment: .leading)
+            Text(value.isEmpty ? "尚未设置" : value)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.white.opacity(0.85))
+                .lineLimit(1)
+                .textSelection(.enabled)
+            Spacer(minLength: 8)
+            trailing()
+        }
+        .padding(10)
+        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+    }
+
+    private func color(for state: RuntimeCheckItem.State) -> Color {
+        switch state {
+        case .ok: return .green
+        case .warning: return .yellow
+        case .missing: return .orange
+        case .blocked: return .red
         }
     }
 
@@ -114,634 +565,5 @@ private struct SidebarPanel: View {
             get: { store.selectedGameID },
             set: { store.selectGame($0) }
         )
-    }
-}
-
-private struct HeroHeader: View {
-    @ObservedObject var store: AppStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center) {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("GAL FOR MacOS")
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text("支持在Mac上运行轻量级exe文件")
-                        .font(.callout)
-                        .foregroundStyle(.white.opacity(0.8))
-                }
-                Spacer()
-                Button {
-                    store.autoFixGuidance()
-                } label: {
-                    Label("一键修复引导", systemImage: "wand.and.stars")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppTheme.accent2)
-            }
-
-            HStack(spacing: 10) {
-                StepBadge(title: "P1", text: "选择游戏", active: store.selectedWizardStep == .p1)
-                StepBadge(title: "P2", text: "运行环境", active: store.selectedWizardStep == .p2)
-                StepBadge(title: "P3", text: "启动游戏", active: store.selectedWizardStep == .p3)
-            }
-
-        }
-        .glassCard()
-    }
-}
-
-private struct StepBadge: View {
-    var title: String
-    var text: String
-    var active: Bool
-
-    var body: some View {
-        HStack(spacing: 6) {
-            Text(title)
-                .font(.caption.weight(.bold))
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.white.opacity(0.08))
-                .clipShape(Capsule())
-            Text(text)
-                .font(.caption)
-        }
-        .foregroundStyle(.white.opacity(active ? 0.95 : 0.82))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Color.white.opacity(0.05))
-        .overlay(
-            Capsule()
-                .stroke(Color.white.opacity(active ? 0.12 : 0.08), lineWidth: 1)
-        )
-        .clipShape(Capsule())
-    }
-}
-
-private struct P1GameSelectionCard: View {
-    @ObservedObject var store: AppStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            sectionTitle(icon: "1.circle.fill", title: "P1 选择游戏文件夹（自动识别主程序）")
-
-            Text("推荐做法：直接选择整个游戏目录，启动器会自动扫描 `.exe` 并优先推荐真正的主程序。")
-                .font(.callout)
-                .foregroundStyle(.white.opacity(0.78))
-
-            HStack(alignment: .top, spacing: 12) {
-                VStack(alignment: .leading, spacing: 8) {
-                    labeledPath("当前目录", store.scanResult?.folderPath ?? "尚未选择")
-                    HStack(spacing: 8) {
-                        Button {
-                            store.selectedWizardStep = .p1
-                            store.chooseAndScanGameFolder()
-                        } label: {
-                            Label("选择游戏文件夹", systemImage: "folder")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(AppTheme.accent)
-
-                        Button {
-                            if let path = store.scanResult?.folderPath {
-                                store.scanGameFolder(URL(fileURLWithPath: path))
-                            }
-                        } label: {
-                            Label("重新扫描", systemImage: "arrow.clockwise")
-                        }
-                        .buttonStyle(.bordered)
-                        .disabled(store.scanResult == nil)
-                    }
-                }
-
-                Spacer()
-
-                VStack(alignment: .leading, spacing: 6) {
-                    statusChip(title: "识别引擎", value: store.scanResult?.engine.rawValue ?? "未识别")
-                    statusChip(title: "XP3 数量", value: store.scanResult.map { "\($0.xp3Count)" } ?? "-")
-                    statusChip(title: "候选 EXE", value: store.scanResult.map { "\($0.candidates.count)" } ?? "-")
-                }
-            }
-
-            if let scan = store.scanResult {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("推荐主程序")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    HStack {
-                        Text(store.recommendedOrChosenEXEPath.map { URL(fileURLWithPath: $0).lastPathComponent } ?? "未识别")
-                            .font(.system(.body, design: .monospaced))
-                            .foregroundStyle(.white)
-                            .lineLimit(1)
-                        Spacer()
-                        Button("手动选择 EXE") {
-                            store.manuallyChooseEXEForScannedFolder()
-                        }
-                        .buttonStyle(.bordered)
-                    }
-                    labeledPath("EXE 路径", store.recommendedOrChosenEXEPath ?? "未选择")
-
-                    if !scan.candidates.isEmpty {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("候选列表（按优先级排序）")
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.white.opacity(0.9))
-                            ForEach(Array(scan.candidates.prefix(5))) { candidate in
-                                HStack(alignment: .top, spacing: 8) {
-                                    Text(candidate.fileName)
-                                        .font(.system(.callout, design: .monospaced))
-                                        .foregroundStyle(.white)
-                                    Spacer()
-                                    Text("分数 \(candidate.score)")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                }
-                                Text(candidate.reason)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                                    .padding(.top, -2)
-                            }
-                        }
-                        .padding(12)
-                        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
-                    }
-
-                    if !scan.notes.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            ForEach(scan.notes, id: \.self) { note in
-                                Label(note, systemImage: "info.circle")
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-
-                    HStack {
-                        Button {
-                            store.saveScannedGameProfile()
-                        } label: {
-                            Label("保存到游戏列表（进入 P2）", systemImage: "square.and.arrow.down")
-                                .frame(maxWidth: .infinity)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .tint(AppTheme.accent)
-                        .disabled(store.recommendedOrChosenEXEPath == nil)
-                    }
-                }
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.03)))
-            }
-        }
-        .glassCard()
-    }
-
-    private func sectionTitle(icon: String, title: String) -> some View {
-        HStack {
-            Image(systemName: icon)
-                .foregroundStyle(AppTheme.accent2)
-            Text(title)
-                .font(.title3.weight(.semibold))
-                .foregroundStyle(.white)
-        }
-    }
-
-    private func labeledPath(_ label: String, _ path: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(path)
-                .font(.system(.callout, design: .monospaced))
-                .foregroundStyle(.white)
-                .textSelection(.enabled)
-                .lineLimit(2)
-        }
-    }
-
-    private func statusChip(title: String, value: String) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.white)
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.05)))
-    }
-}
-
-private struct P2RuntimeCard: View {
-    @ObservedObject var store: AppStore
-    @State private var showGuideSheet = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "2.circle.fill")
-                    .foregroundStyle(AppTheme.accent2)
-                Text("P2 运行环境（无需命令行，图形化引导）")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-                Spacer()
-                Button {
-                    store.selectedWizardStep = .p2
-                    store.refreshRuntime()
-                } label: {
-                    Label("重新检测", systemImage: "arrow.clockwise")
-                }
-                .buttonStyle(.bordered)
-            }
-
-            Text("这里会检测 `Wine / Rosetta / XQuartz / Gatekeeper`。你可以直接点按钮打开官网或系统设置，不需要终端命令。")
-                .font(.callout)
-                .foregroundStyle(.white.opacity(0.78))
-
-            VStack(spacing: 10) {
-                ForEach(Array(store.runtimeReport.components.enumerated()), id: \.offset) { _, component in
-                    RuntimeComponentRow(component: component)
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("已检测路径")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.9))
-                runtimePathLine("CPU", store.runtimeReport.cpuDescription)
-                runtimePathLine("Wine Binary", store.runtimeReport.wineBinaryPath ?? "未检测到")
-                runtimePathLine("Wine App", store.runtimeReport.wineAppPath ?? "未检测到")
-                runtimePathLine("XQuartz", store.runtimeReport.xQuartzPath ?? "未检测到")
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
-
-            HStack(spacing: 10) {
-                Button {
-                    showGuideSheet = true
-                } label: {
-                    Label("一键安装引导", systemImage: "sparkles")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(AppTheme.accent2)
-
-                Button("选择 Wine 可执行文件") { store.chooseWineBinary() }
-                    .buttonStyle(.bordered)
-                Button("选择 Wine.app") { store.chooseWineApp() }
-                    .buttonStyle(.bordered)
-            }
-
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 10) {
-                    Button {
-                        Task { await store.downloadAndOpenWineInstaller() }
-                    } label: {
-                        Label("下载并打开 Wine 安装包", systemImage: "arrow.down.circle")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.accent)
-                    .disabled(store.runtimeInstallBusy)
-
-                    Button {
-                        Task { await store.downloadAndOpenXQuartzInstaller() }
-                    } label: {
-                        Label("下载并打开 XQuartz 安装包", systemImage: "arrow.down.circle")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(store.runtimeInstallBusy)
-
-                    if store.runtimeInstallBusy {
-                        ProgressView()
-                            .controlSize(.small)
-                    }
-                }
-
-                if !store.runtimeInstallMessage.isEmpty {
-                    Text(store.runtimeInstallMessage)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-                if !store.lastDownloadedInstallerPath.isEmpty {
-                    HStack(spacing: 8) {
-                        Text(store.lastDownloadedInstallerPath)
-                            .font(.system(.caption2, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                            .textSelection(.enabled)
-                        Spacer()
-                        Button("打开安装包") { store.openLastDownloadedInstaller() }
-                            .buttonStyle(.borderless)
-                            .font(.caption)
-                    }
-                }
-            }
-        }
-        .glassCard()
-        .sheet(isPresented: $showGuideSheet) {
-            RuntimeInstallGuideSheet(store: store)
-        }
-    }
-
-    private func runtimePathLine(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(label)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.white)
-                .textSelection(.enabled)
-                .lineLimit(2)
-        }
-    }
-}
-
-private struct RuntimeComponentRow: View {
-    let component: RuntimeComponentStatus
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Circle()
-                .fill(color(for: component.state))
-                .frame(width: 10, height: 10)
-                .padding(.top, 6)
-            VStack(alignment: .leading, spacing: 2) {
-                HStack {
-                    Text(component.title)
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                    Spacer()
-                    Text(component.state.title)
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(color(for: component.state))
-                }
-                Text(component.summary)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                Text(component.detail)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(10)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.035)))
-    }
-
-    private func color(for state: ComponentState) -> Color {
-        switch state {
-        case .ready: return AppTheme.accent
-        case .warning: return AppTheme.accent2
-        case .blocked: return AppTheme.danger
-        case .missing: return AppTheme.danger
-        case .unknown: return .gray
-        }
-    }
-}
-
-private struct RuntimeInstallGuideSheet: View {
-    @ObservedObject var store: AppStore
-    @Environment(\.dismiss) private var dismiss
-
-    var body: some View {
-        ZStack {
-            AppTheme.backgroundGradient.ignoresSafeArea()
-            VStack(alignment: .leading, spacing: 16) {
-                Text("一键安装引导（P2）")
-                    .font(.title2.weight(.bold))
-                    .foregroundStyle(.white)
-                Text("这是图形化引导，不需要命令行。按顺序点即可。安装完成后回到主界面点击“重新检测”。")
-                    .foregroundStyle(.white.opacity(0.8))
-
-                VStack(spacing: 10) {
-                    guideRow(title: "1. 下载 / 安装 Wine", subtitle: "打开 Wine 发布页面（推荐 Gcenx 构建）") {
-                        RuntimeManager.openWineDownloadPage()
-                    }
-                    guideRow(title: "1A. App 内置下载 Wine 安装包（推荐）", subtitle: "不跳网页，直接下载并打开安装包") {
-                        Task { await store.downloadAndOpenWineInstaller() }
-                    }
-                    guideRow(title: "2. 下载 / 安装 XQuartz（可选但建议）", subtitle: "部分 Wine 场景需要图形层支持") {
-                        RuntimeManager.openXQuartzDownloadPage()
-                    }
-                    guideRow(title: "2A. App 内置下载 XQuartz 安装包", subtitle: "不跳网页，直接下载并打开安装包") {
-                        Task { await store.downloadAndOpenXQuartzInstaller() }
-                    }
-                    guideRow(title: "3. Rosetta 安装说明（M 系列建议）", subtitle: "打开苹果官方说明页") {
-                        RuntimeManager.openRosettaGuide()
-                    }
-                    guideRow(title: "4. 放行被拦截的 Wine", subtitle: "打开“隐私与安全性”页面") {
-                        RuntimeManager.openPrivacySecuritySettings()
-                    }
-                    guideRow(title: "5. 已安装但仍未识别？", subtitle: "手动选择 Wine.app") {
-                        store.chooseWineApp()
-                    }
-                }
-
-                Spacer()
-
-                HStack {
-                    Button("重新检测运行环境") {
-                        store.refreshRuntime()
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.accent)
-                    Spacer()
-                    if store.runtimeInstallBusy { ProgressView() }
-                    Button("关闭") { dismiss() }
-                        .buttonStyle(.bordered)
-                }
-            }
-            .padding(24)
-            .frame(width: 720, height: 520, alignment: .topLeading)
-        }
-    }
-
-    private func guideRow(title: String, subtitle: String, action: @escaping () -> Void) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(title)
-                    .foregroundStyle(.white)
-                    .font(.headline)
-                Text(subtitle)
-                    .foregroundStyle(.secondary)
-                    .font(.caption)
-            }
-            Spacer()
-            Button("打开") { action() }
-                .buttonStyle(.bordered)
-        }
-        .padding(14)
-        .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.05)))
-    }
-}
-
-private struct P3LaunchCard: View {
-    @ObservedObject var store: AppStore
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack {
-                Image(systemName: "3.circle.fill")
-                    .foregroundStyle(AppTheme.accent2)
-                Text("P3 启动游戏")
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(.white)
-            }
-
-            if let game = store.selectedGame {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(alignment: .top, spacing: 12) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            TextField("游戏名称", text: Binding(
-                                get: { store.selectedGame?.name ?? "" },
-                                set: { store.updateSelectedGame(name: $0) }
-                            ))
-                            .textFieldStyle(.roundedBorder)
-
-                            labeledValue("游戏目录", game.folderPath)
-                            labeledValue("主程序 EXE", game.exePath)
-                            labeledValue("Wine Prefix", game.prefixPath)
-                            labeledValue("引擎识别", game.engine.rawValue)
-                        }
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Button("改 EXE") { store.chooseCustomEXEForSelectedGame() }
-                                .buttonStyle(.bordered)
-                            Button("改 Prefix") { store.chooseCustomPrefixForSelectedGame() }
-                                .buttonStyle(.bordered)
-                            Button("打开游戏目录") { store.revealSelectedGameFolder() }
-                                .buttonStyle(.bordered)
-                            Button("打开日志") { store.openLastLog() }
-                                .buttonStyle(.bordered)
-                                .disabled(store.lastLogPath.isEmpty)
-                        }
-                    }
-
-                    DisclosureGroup("高级设置（可选）", isExpanded: $store.showAdvanced) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text("备注（启动器内保存）")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            TextEditor(text: Binding(
-                                get: { store.selectedGame?.notes ?? "" },
-                                set: { store.updateSelectedGame(notes: $0) }
-                            ))
-                            .frame(minHeight: 84)
-                            .padding(6)
-                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
-                        }
-                        .padding(.top, 8)
-                    }
-                    .foregroundStyle(.white)
-
-                    Button {
-                        store.selectedWizardStep = .p3
-                        store.startCurrentGame()
-                    } label: {
-                        Label("开始游戏", systemImage: "play.fill")
-                            .font(.headline)
-                            .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(AppTheme.accent)
-                }
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.03)))
-            } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("还没有游戏配置")
-                        .font(.headline)
-                        .foregroundStyle(.white)
-                    Text("请先在 P1 选择游戏文件夹并保存到列表，然后再来这里一键启动。")
-                        .font(.callout)
-                        .foregroundStyle(.white.opacity(0.78))
-                }
-                .padding(14)
-                .background(RoundedRectangle(cornerRadius: 14).fill(Color.white.opacity(0.03)))
-            }
-
-            if !store.lastLogPath.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("最近日志")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Text(store.lastLogPath)
-                        .font(.system(.caption, design: .monospaced))
-                        .foregroundStyle(.white)
-                        .textSelection(.enabled)
-                        .lineLimit(2)
-                }
-            }
-        }
-        .glassCard()
-    }
-
-    private func labeledValue(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.white)
-                .textSelection(.enabled)
-                .lineLimit(2)
-        }
-    }
-}
-
-struct DeveloperExportView: View {
-    @ObservedObject var store: AppStore
-
-    var body: some View {
-        ZStack {
-            AppTheme.backgroundGradient.ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("P3 独立 App 打包导出（开发者侧）")
-                        .font(.title2.weight(.bold))
-                        .foregroundStyle(.white)
-                    Text("用户使用时不需要 Xcode。这里是给你打包 `.app` / `.dmg` 用的说明入口。项目目录已附带脚本（含图标生成）：`scripts/generate_app_icon.sh`、`scripts/build_release_app.sh`、`scripts/make_dmg.sh`。")
-                        .foregroundStyle(.white.opacity(0.8))
-
-                    Group {
-                        infoRow("项目根目录", store.rootDir.deletingLastPathComponent().path)
-                        infoRow("运行时数据目录", store.rootDir.path)
-                        infoRow("导出输出目录（默认）", store.exportsDir.path)
-                    }
-                    .glassCard()
-
-                    VStack(alignment: .leading, spacing: 10) {
-                        Text("推荐发布流程")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                        Text("1. 在本项目根目录执行 `scripts/build_release_app.sh` 生成 `dist/GAL FOR MacOS.app`。")
-                            .foregroundStyle(.secondary)
-                        Text("2. 脚本会自动生成并注入默认图标（若缺失）。")
-                            .foregroundStyle(.secondary)
-                        Text("3. 运行 `scripts/make_dmg.sh` 生成 `GAL FOR MacOS.dmg`（可选）。")
-                            .foregroundStyle(.secondary)
-                        Text("4. 首次分发给用户时，建议附带一页“如何在 macOS 隐私与安全性中允许 Wine”说明。")
-                            .foregroundStyle(.secondary)
-                    }
-                    .glassCard()
-                }
-                .padding(20)
-            }
-        }
-    }
-
-    private func infoRow(_ title: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
-            Text(value)
-                .font(.system(.callout, design: .monospaced))
-                .foregroundStyle(.white)
-                .textSelection(.enabled)
-        }
     }
 }

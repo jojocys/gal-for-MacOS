@@ -4,84 +4,73 @@ import SwiftUI
 
 @MainActor
 final class AppStore: ObservableObject {
-    @Published var games: [SavedGameProfile] = []
+    @Published var games: [GameEntry] = []
     @Published var selectedGameID: UUID?
-    @Published var selectedWizardStep: WizardStep = .p1
-    @Published var runtimeReport: RuntimeEnvironmentReport = .empty
     @Published var statusMessage: String = "欢迎使用：先在 P1 选择游戏文件夹。"
     @Published var lastLogPath: String = ""
 
-    @Published var lastChosenGameFolderPath: String = ""
-    @Published var scanResult: GameScanResult?
-    @Published var customEXEPath: String = ""
-    @Published var showAdvanced: Bool = false
+    @Published var scanResult: ScanResult?
+    @Published var runtimeReport = RuntimeCheckReport(items: [], resolvedWineBinaryPath: "", detectedWineAppPath: "", rosettaInstalled: false, xquartzInstalled: false, gatekeeperBlocked: false)
+    @Published var isDownloadingInstaller = false
+    @Published var downloadStatusText: String = ""
 
-    @Published var userWineBinaryPath: String = ""
-    @Published var userWineAppPath: String = ""
-    @Published var runtimeInstallBusy: Bool = false
-    @Published var runtimeInstallMessage: String = ""
-    @Published var lastDownloadedInstallerPath: String = ""
+    private let fm = FileManager.default
 
-    private let fm: FileManager
-    let rootDir: URL
-    let storeFileURL: URL
+    let appDataDir: URL
     let logsDir: URL
     let prefixesDir: URL
-    let exportsDir: URL
-    let downloadsDir: URL
+    let storeURL: URL
+
+    var preferredWineBinaryPath: String = "" { didSet { save() } }
+    var preferredWineAppPath: String = "" { didSet { save() } }
 
     init() {
-        let fm = FileManager.default
-        self.fm = fm
-        let root = fm.homeDirectoryForCurrentUser.appendingPathComponent(".vnlauncher-zero", isDirectory: true)
-        rootDir = root
-        storeFileURL = root.appendingPathComponent("store.json")
-        logsDir = root.appendingPathComponent("logs", isDirectory: true)
-        prefixesDir = root.appendingPathComponent("prefixes", isDirectory: true)
-        exportsDir = root.appendingPathComponent("exports", isDirectory: true)
-        downloadsDir = root.appendingPathComponent("downloads", isDirectory: true)
-
-        ensureDirectories()
+        let home = fm.homeDirectoryForCurrentUser
+        appDataDir = home.appendingPathComponent(".vnlauncher", isDirectory: true)
+        logsDir = appDataDir.appendingPathComponent("logs", isDirectory: true)
+        prefixesDir = appDataDir.appendingPathComponent("zero-prefixes", isDirectory: true)
+        storeURL = appDataDir.appendingPathComponent("gal-for-macos-games.json")
+        ensureDirs()
         load()
-        refreshRuntime()
+        refreshRuntimeStatus()
     }
 
-    var selectedGameIndex: Int? {
-        guard let selectedGameID else { return nil }
-        return games.firstIndex(where: { $0.id == selectedGameID })
+    var selectedIndex: Int? {
+        guard let id = selectedGameID else { return nil }
+        return games.firstIndex(where: { $0.id == id })
     }
 
-    var selectedGame: SavedGameProfile? {
-        guard let idx = selectedGameIndex else { return nil }
+    var selectedGame: GameEntry? {
+        guard let idx = selectedIndex else { return nil }
         return games[idx]
     }
 
-    var recommendedOrChosenEXEPath: String? {
-        let path = customEXEPath.isEmpty ? scanResult?.recommendedEXEPath : customEXEPath
-        guard let path, !path.isEmpty else { return nil }
-        return path
-    }
-
-    func ensureDirectories() {
-        try? fm.createDirectory(at: rootDir, withIntermediateDirectories: true)
-        try? fm.createDirectory(at: logsDir, withIntermediateDirectories: true)
-        try? fm.createDirectory(at: prefixesDir, withIntermediateDirectories: true)
-        try? fm.createDirectory(at: exportsDir, withIntermediateDirectories: true)
-        try? fm.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
-    }
-
     func load() {
-        guard fm.fileExists(atPath: storeFileURL.path) else { return }
+        guard fm.fileExists(atPath: storeURL.path) else {
+            if games.isEmpty {
+                let demo = GameEntry(name: "新游戏", prefixDir: defaultPrefixDir(for: "新游戏"))
+                games = [demo]
+                selectedGameID = demo.id
+            }
+            return
+        }
         do {
-            let data = try Data(contentsOf: storeFileURL)
+            let data = try Data(contentsOf: storeURL)
             let decoder = JSONDecoder()
             decoder.dateDecodingStrategy = .iso8601
-            let saved = try decoder.decode(AppStoreFile.self, from: data)
-            games = saved.games.sorted { $0.updatedAt > $1.updatedAt }
-            selectedGameID = saved.selectedGameID ?? games.first?.id
-            userWineBinaryPath = saved.userWineBinaryPath ?? ""
-            userWineAppPath = saved.userWineAppPath ?? ""
-            lastChosenGameFolderPath = saved.lastGameFolderPath ?? ""
+            let file = try decoder.decode(GameStoreFile.self, from: data)
+            games = file.games.sorted(by: { $0.updatedAt > $1.updatedAt })
+            selectedGameID = file.selectedGameID ?? games.first?.id
+            preferredWineBinaryPath = file.preferredWineBinaryPath
+            preferredWineAppPath = file.preferredWineAppPath
+            if games.isEmpty {
+                let demo = GameEntry(name: "新游戏", prefixDir: defaultPrefixDir(for: "新游戏"))
+                games = [demo]
+                selectedGameID = demo.id
+            }
+            if let game = selectedGame, !game.gameFolderPath.isEmpty {
+                scanResult = GameScanner.scanGameFolder(URL(fileURLWithPath: game.gameFolderPath))
+            }
         } catch {
             statusMessage = "读取配置失败：\(error.localizedDescription)"
         }
@@ -89,213 +78,171 @@ final class AppStore: ObservableObject {
 
     func save() {
         do {
-            let payload = AppStoreFile(
+            ensureDirs()
+            let file = GameStoreFile(
                 selectedGameID: selectedGameID,
                 games: games,
-                userWineBinaryPath: userWineBinaryPath.isEmpty ? nil : userWineBinaryPath,
-                userWineAppPath: userWineAppPath.isEmpty ? nil : userWineAppPath,
-                lastGameFolderPath: lastChosenGameFolderPath.isEmpty ? nil : lastChosenGameFolderPath
+                preferredWineBinaryPath: preferredWineBinaryPath,
+                preferredWineAppPath: preferredWineAppPath
             )
             let encoder = JSONEncoder()
             encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
             encoder.dateEncodingStrategy = .iso8601
-            let data = try encoder.encode(payload)
-            try data.write(to: storeFileURL, options: .atomic)
+            let data = try encoder.encode(file)
+            try data.write(to: storeURL, options: .atomic)
         } catch {
             statusMessage = "保存配置失败：\(error.localizedDescription)"
         }
     }
 
-    func refreshRuntime() {
+    func refreshRuntimeStatus() {
         runtimeReport = RuntimeManager.detect(
-            userWineBinaryPath: userWineBinaryPath.isEmpty ? nil : userWineBinaryPath,
-            userWineAppPath: userWineAppPath.isEmpty ? nil : userWineAppPath
+            preferredWineBinaryPath: preferredWineBinaryPath,
+            preferredWineAppPath: preferredWineAppPath
         )
-    }
-
-    func downloadAndOpenWineInstaller() async {
-        await downloadAndOpenInstaller(.wine)
-    }
-
-    func downloadAndOpenXQuartzInstaller() async {
-        await downloadAndOpenInstaller(.xquartz)
-    }
-
-    func chooseAndScanGameFolder() {
-        let url = PlatformDialogs.chooseGameFolder(startingAt: lastChosenGameFolderPath.isEmpty ? nil : lastChosenGameFolderPath)
-        guard let url else { return }
-        scanGameFolder(url)
-    }
-
-    func scanGameFolder(_ folderURL: URL) {
-        lastChosenGameFolderPath = folderURL.path
-        let result = GameScanner.scan(folderURL: folderURL)
-        scanResult = result
-        customEXEPath = ""
-        selectedWizardStep = .p1
-        statusMessage = result.recommendedEXEPath == nil ? "未找到可启动 EXE，请手动选择。" : "已完成扫描，确认推荐主程序后保存。"
-        save()
-    }
-
-    func manuallyChooseEXEForScannedFolder() {
-        let start = scanResult?.folderPath ?? lastChosenGameFolderPath
-        guard let url = PlatformDialogs.chooseExecutable(startingAt: start.isEmpty ? nil : start) else { return }
-        customEXEPath = url.path
-        statusMessage = "已手动选择 EXE：\(url.lastPathComponent)"
-    }
-
-    func saveScannedGameProfile() {
-        guard let scanResult, let exePath = recommendedOrChosenEXEPath else {
-            statusMessage = "请先在 P1 选择游戏文件夹并确认 EXE。"
-            return
-        }
-
-        let folderURL = URL(fileURLWithPath: scanResult.folderPath)
-        let defaultName = folderURL.lastPathComponent
-        let profileName = defaultName.isEmpty ? "新游戏" : defaultName
-        let prefixPath = prefixesDir.appendingPathComponent(slug(for: profileName), isDirectory: true).path
-        try? fm.createDirectory(atPath: prefixPath, withIntermediateDirectories: true, attributes: nil)
-
-        if let idx = games.firstIndex(where: { $0.folderPath == scanResult.folderPath }) {
-            games[idx].name = profileName
-            games[idx].exePath = exePath
-            games[idx].engine = scanResult.engine
-            games[idx].prefixPath = prefixPath
-            games[idx].updatedAt = Date()
-            selectedGameID = games[idx].id
-            statusMessage = "已更新游戏配置：\(profileName)"
-        } else {
-            let profile = SavedGameProfile(
-                name: profileName,
-                folderPath: scanResult.folderPath,
-                exePath: exePath,
-                prefixPath: prefixPath,
-                engine: scanResult.engine,
-                notes: scanResult.notes.joined(separator: "\n")
-            )
-            games.insert(profile, at: 0)
-            selectedGameID = profile.id
-            statusMessage = "已添加游戏：\(profileName)"
-        }
-
-        selectedWizardStep = .p2
-        save()
     }
 
     func selectGame(_ id: UUID?) {
         selectedGameID = id
-        if let profile = selectedGame {
-            scanResult = GameScanResult(
-                folderPath: profile.folderPath,
-                engine: profile.engine,
-                recommendedEXEPath: profile.exePath,
-                candidates: [EXECandidate(path: profile.exePath, score: 0, reason: "已保存主程序")],
-                notes: profile.notes.isEmpty ? [] : profile.notes.components(separatedBy: "\n"),
-                xp3Count: 0
-            )
-            customEXEPath = profile.exePath
+        if let game = selectedGame, !game.gameFolderPath.isEmpty {
+            scanResult = GameScanner.scanGameFolder(URL(fileURLWithPath: game.gameFolderPath))
+        } else {
+            scanResult = nil
         }
+        save()
+    }
+
+    func addEmptyGame() {
+        let name = nextUntitledName()
+        let entry = GameEntry(name: name, prefixDir: defaultPrefixDir(for: name))
+        games.insert(entry, at: 0)
+        selectedGameID = entry.id
+        scanResult = nil
+        statusMessage = "已创建空白配置"
         save()
     }
 
     func removeSelectedGame() {
-        guard let idx = selectedGameIndex else { return }
+        guard let idx = selectedIndex else { return }
         let removed = games.remove(at: idx)
         selectedGameID = games.first?.id
         statusMessage = "已删除配置：\(removed.name)"
+        if let game = selectedGame, !game.gameFolderPath.isEmpty {
+            scanResult = GameScanner.scanGameFolder(URL(fileURLWithPath: game.gameFolderPath))
+        } else {
+            scanResult = nil
+        }
         save()
+    }
+
+    func chooseAndScanGameFolder() {
+        let start = selectedGame?.gameFolderPath
+        guard let folder = PlatformPickers.chooseGameFolder(startingAt: start) else { return }
+        applyScanResult(GameScanner.scanGameFolder(folder), persistAsCurrent: true)
+    }
+
+    func rescanCurrentFolder() {
+        guard let path = selectedGame?.gameFolderPath, !path.isEmpty else {
+            statusMessage = "请先选择游戏文件夹"
+            return
+        }
+        applyScanResult(GameScanner.scanGameFolder(URL(fileURLWithPath: path)), persistAsCurrent: true)
+    }
+
+    func chooseEXEManually() {
+        let start = selectedGame?.exePath
+        guard let exe = PlatformPickers.chooseExecutable(startingAt: start) else { return }
+        updateSelected { game in
+            game.exePath = exe.path
+            if game.gameFolderPath.isEmpty { game.gameFolderPath = exe.deletingLastPathComponent().path }
+            if game.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || game.name == "新游戏" {
+                game.name = exe.deletingPathExtension().lastPathComponent
+            }
+            if game.prefixDir.isEmpty { game.prefixDir = defaultPrefixDir(for: game.name) }
+        }
+        statusMessage = "已手动选择 EXE：\(exe.lastPathComponent)"
+        if let folder = selectedGame?.gameFolderPath, !folder.isEmpty {
+            scanResult = GameScanner.scanGameFolder(URL(fileURLWithPath: folder))
+        }
+    }
+
+    func choosePrefixFolder() {
+        let start = selectedGame?.prefixDir
+        guard let folder = PlatformPickers.chooseFolder(startingAt: start, prompt: "选择 Prefix", message: "建议为每个游戏使用独立 Prefix 文件夹") else { return }
+        updateSelected { $0.prefixDir = folder.path }
+        statusMessage = "已设置 Prefix：\(folder.lastPathComponent)"
+    }
+
+    func renameSelectedGame(_ name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        updateSelected { game in
+            game.name = trimmed.isEmpty ? "未命名游戏" : trimmed
+        }
     }
 
     func chooseWineBinary() {
-        guard let url = PlatformDialogs.chooseWineBinary(startingAt: userWineBinaryPath.isEmpty ? nil : userWineBinaryPath) else { return }
-        userWineBinaryPath = url.path
-        refreshRuntime()
-        statusMessage = "已设置 Wine 可执行文件路径。"
-        save()
+        let start = preferredWineBinaryPath
+        guard let file = PlatformPickers.chooseWineBinary(startingAt: start) else { return }
+        preferredWineBinaryPath = file.path
+        statusMessage = "已设置 Wine 路径（优先使用）"
+        refreshRuntimeStatus()
     }
 
     func chooseWineApp() {
-        guard let url = PlatformDialogs.chooseAppBundle(startingAt: userWineAppPath.isEmpty ? "/Applications" : userWineAppPath) else { return }
-        userWineAppPath = url.path
-        if userWineBinaryPath.isEmpty, let resolved = RuntimeManager.resolveWineBinaryPath(inWineApp: url.path) {
-            userWineBinaryPath = resolved
-        }
-        refreshRuntime()
-        statusMessage = "已选择 Wine.app。"
-        save()
+        let start = preferredWineAppPath
+        guard let app = PlatformPickers.chooseApp(startingAt: start, prompt: "选择 Wine.app", message: "请选择 Wine Stable.app 或 Wine.app") else { return }
+        preferredWineAppPath = app.path
+        statusMessage = "已记录 Wine.app 路径"
+        refreshRuntimeStatus()
     }
 
-    func chooseCustomPrefixForSelectedGame() {
-        guard let selectedGame else {
-            statusMessage = "请先保存一个游戏配置。"
+    func openSelectedGameFolder() {
+        guard let path = selectedGame?.gameFolderPath, !path.isEmpty else {
+            statusMessage = "当前配置还没有游戏文件夹"
             return
         }
-        let folder = PlatformDialogs.chooseFolder(
-            title: "选择 Prefix",
-            message: "请选择这个游戏的 Wine Prefix 文件夹（建议独立目录）",
-            startingAt: selectedGame.prefixPath
-        )
-        guard let folder else { return }
-        updateSelectedGame(prefixPath: folder.path)
-        statusMessage = "已更新 Prefix 文件夹。"
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
-    func chooseCustomEXEForSelectedGame() {
-        guard let selectedGame else {
-            statusMessage = "请先保存一个游戏配置。"
+    func applyRecommendedCandidate(_ candidate: ScanCandidate) {
+        updateSelected { game in
+            game.exePath = candidate.exeURL.path
+            game.gameFolderPath = candidate.exeURL.deletingLastPathComponent().path
+            if game.name == "新游戏" || game.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                game.name = candidate.exeURL.deletingPathExtension().lastPathComponent
+            }
+            if game.prefixDir.isEmpty {
+                game.prefixDir = defaultPrefixDir(for: game.name)
+            }
+            if let currentScan = scanResult {
+                game.engineHint = currentScan.engineHint
+            }
+        }
+        statusMessage = "已选择主程序：\(candidate.exeURL.lastPathComponent)"
+    }
+
+    func saveCurrentFromP1() {
+        guard selectedGame != nil else { return }
+        updateSelected { game in
+            if game.prefixDir.isEmpty { game.prefixDir = defaultPrefixDir(for: game.name) }
+            if let scanResult { game.engineHint = scanResult.engineHint }
+        }
+        statusMessage = "已保存到游戏列表（进入 P2）"
+    }
+
+    func startGame() {
+        guard let game = selectedGame else {
+            statusMessage = "请先选择一个游戏配置"
             return
         }
-        guard let exeURL = PlatformDialogs.chooseExecutable(startingAt: selectedGame.folderPath) else { return }
-        updateSelectedGame(exePath: exeURL.path)
-        statusMessage = "已更新主程序：\(exeURL.lastPathComponent)"
-    }
-
-    func updateSelectedGame(name: String? = nil, exePath: String? = nil, prefixPath: String? = nil, notes: String? = nil) {
-        guard let idx = selectedGameIndex else { return }
-        if let name { games[idx].name = name }
-        if let exePath { games[idx].exePath = exePath }
-        if let prefixPath { games[idx].prefixPath = prefixPath }
-        if let notes { games[idx].notes = notes }
-        games[idx].updatedAt = Date()
-        save()
-    }
-
-    func startCurrentGame() {
-        guard let profile = selectedGame else {
-            statusMessage = "请先在 P1 添加并保存一个游戏配置。"
-            return
-        }
-        refreshRuntime()
-
         do {
-            let logURL = try GameLauncher.launch(
-                profile: profile,
-                runtimeReport: runtimeReport,
-                userWineBinaryPath: userWineBinaryPath.isEmpty ? nil : userWineBinaryPath,
-                userWineAppPath: userWineAppPath.isEmpty ? nil : userWineAppPath,
-                logsDir: logsDir
-            )
-            lastLogPath = logURL.path
-            selectedWizardStep = .p3
-            statusMessage = "已尝试启动：\(profile.name)。如果未成功，请点“打开日志”。"
+            let log = try GameLauncher.launch(game: game, logsDir: logsDir, preferredWineBinaryPath: preferredWineBinaryPath)
+            lastLogPath = log.path
+            statusMessage = "已尝试启动：\(game.name)"
+            touchSelected()
         } catch {
-            statusMessage = error.localizedDescription
+            statusMessage = "启动失败：\(error.localizedDescription)"
         }
-    }
-
-    func autoFixGuidance() {
-        refreshRuntime()
-        if runtimeReport.wineBinaryPath == nil {
-            selectedWizardStep = .p2
-            statusMessage = "请先在 P2 完成 Wine 安装或选择 Wine.app。"
-            return
-        }
-        if runtimeReport.components.contains(where: { $0.title.contains("Gatekeeper") && $0.state == .blocked }) {
-            RuntimeManager.openPrivacySecuritySettings()
-            statusMessage = "已打开“隐私与安全性”，请允许 Wine 后再回来启动。"
-            return
-        }
-        statusMessage = "未发现可自动引导的阻塞项，可直接尝试启动。"
     }
 
     func openLastLog() {
@@ -303,62 +250,128 @@ final class AppStore: ObservableObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: lastLogPath))
     }
 
-    func openLastDownloadedInstaller() {
-        guard !lastDownloadedInstallerPath.isEmpty else { return }
-        NSWorkspace.shared.open(URL(fileURLWithPath: lastDownloadedInstallerPath))
+    func openRepairGuide() {
+        RuntimeManager.openPrivacySecuritySettings()
     }
 
-    func revealSelectedGameFolder() {
-        guard let profile = selectedGame else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([profile.folderURL])
+    func openRosettaGuide() { RuntimeManager.openRosettaGuide() }
+    func openPrivacySettings() { RuntimeManager.openPrivacySecuritySettings() }
+    func openWineDownloadPage() { RuntimeManager.openWineDownloadPage() }
+    func openXQuartzDownloadPage() { RuntimeManager.openXQuartzDownloadPage() }
+
+    func copyTerminalInstallCommands() {
+        let commands = [
+            "# Rosetta 2（Apple Silicon）",
+            "/usr/sbin/softwareupdate --install-rosetta --agree-to-license",
+            "",
+            "# XQuartz",
+            "brew install --cask xquartz",
+            "",
+            "# Wine Stable（Homebrew）",
+            "brew install --cask --no-quarantine wine-stable"
+        ].joined(separator: "\n")
+
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(commands, forType: .string)
+        statusMessage = "已复制终端安装命令（Rosetta / XQuartz / Wine）"
     }
 
-    private func slug(for text: String) -> String {
-        let chars = text.lowercased().map { ch -> Character in
-            if ch.isLetter || ch.isNumber || ch == "-" || ch == "_" || ch == "." { return ch }
+    func downloadAndOpenWineInstaller() {
+        downloadAndOpenInstaller(.wine)
+    }
+
+    func downloadAndOpenXQuartzInstaller() {
+        downloadAndOpenInstaller(.xquartz)
+    }
+
+    func downloadAndOpenInstaller(_ kind: RuntimeInstaller.InstallerKind) {
+        guard !isDownloadingInstaller else { return }
+        isDownloadingInstaller = true
+        downloadStatusText = "正在准备下载 \(kind.displayName) 安装包..."
+        Task {
+            defer {
+                Task { @MainActor in self.isDownloadingInstaller = false }
+            }
+            do {
+                let result = try await RuntimeInstaller.downloadLatestInstaller(kind: kind)
+                await MainActor.run {
+                    self.downloadStatusText = "下载完成并已打开安装包：\(result.downloadedFileURL.lastPathComponent)"
+                    self.statusMessage = "已打开 \(kind.displayName) 安装包"
+                }
+            } catch {
+                await MainActor.run {
+                    self.downloadStatusText = "\(kind.displayName) 下载失败：\(error.localizedDescription)"
+                    self.statusMessage = self.downloadStatusText
+                }
+            }
+        }
+    }
+
+    private func applyScanResult(_ result: ScanResult, persistAsCurrent: Bool) {
+        scanResult = result
+        updateSelected { game in
+            game.gameFolderPath = result.folderURL.path
+            game.engineHint = result.engineHint
+            if game.name == "新游戏" || game.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                game.name = result.folderURL.lastPathComponent
+            }
+            if let recommended = result.recommendedEXE {
+                game.exePath = recommended.path
+            }
+            if game.prefixDir.isEmpty {
+                game.prefixDir = defaultPrefixDir(for: game.name)
+            }
+        }
+
+        if let recommended = result.recommendedEXE {
+            statusMessage = "已扫描：推荐主程序 \(recommended.lastPathComponent)"
+        } else {
+            statusMessage = "已扫描文件夹，但未找到可用 EXE（可手动选择）"
+        }
+
+        if !persistAsCurrent { return }
+    }
+
+    private func updateSelected(_ mutate: (inout GameEntry) -> Void) {
+        guard let idx = selectedIndex else { return }
+        mutate(&games[idx])
+        games[idx].updatedAt = Date()
+        save()
+    }
+
+    private func touchSelected() {
+        updateSelected { _ in }
+    }
+
+    private func ensureDirs() {
+        try? fm.createDirectory(at: appDataDir, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: logsDir, withIntermediateDirectories: true)
+        try? fm.createDirectory(at: prefixesDir, withIntermediateDirectories: true)
+    }
+
+    private func defaultPrefixDir(for name: String) -> String {
+        let safe = slug(name)
+        let path = prefixesDir.appendingPathComponent(safe, isDirectory: true)
+        try? fm.createDirectory(at: path, withIntermediateDirectories: true)
+        return path.path
+    }
+
+    private func slug(_ raw: String) -> String {
+        let lower = raw.lowercased()
+        let mapped = lower.map { ch -> Character in
+            if ch.isLetter || ch.isNumber || ch == "_" || ch == "-" || ch == "." { return ch }
             return "_"
         }
-        let value = String(chars).trimmingCharacters(in: CharacterSet(charactersIn: "_-"))
-        return value.isEmpty ? UUID().uuidString.lowercased() : value
+        let joined = String(mapped).trimmingCharacters(in: CharacterSet(charactersIn: "_-."))
+        return joined.isEmpty ? UUID().uuidString.lowercased() : joined
     }
 
-    private func downloadAndOpenInstaller(_ target: RuntimeInstallTarget) async {
-        if runtimeInstallBusy { return }
-        runtimeInstallBusy = true
-        selectedWizardStep = .p2
-        let label = target == .wine ? "Wine" : "XQuartz"
-        runtimeInstallMessage = "正在获取 \(label) 最新安装包信息..."
-
-        defer { runtimeInstallBusy = false }
-
-        do {
-            let arch = currentArchitecture()
-            let fileURL = try await RuntimeInstaller.downloadLatestInstaller(
-                target,
-                destinationDir: downloadsDir,
-                preferredArchitecture: arch
-            )
-            lastDownloadedInstallerPath = fileURL.path
-            runtimeInstallMessage = "\(label) 安装包已下载：\(fileURL.lastPathComponent)，正在打开..."
-            RuntimeInstaller.openInstaller(fileURL)
-            statusMessage = "已下载并打开 \(label) 安装包。安装完成后回到 P2 点击“重新检测”。"
-        } catch {
-            runtimeInstallMessage = error.localizedDescription
-            statusMessage = error.localizedDescription
-        }
-    }
-
-    private func currentArchitecture() -> String {
-        let process = Process()
-        let pipe = Pipe()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/uname")
-        process.arguments = ["-m"]
-        process.standardOutput = pipe
-        process.standardError = Pipe()
-        try? process.run()
-        process.waitUntilExit()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
-        return String(data: data, encoding: .utf8)?
-            .trimmingCharacters(in: .whitespacesAndNewlines) ?? "unknown"
+    private func nextUntitledName() -> String {
+        let existing = Set(games.map(\.name))
+        if !existing.contains("新游戏") { return "新游戏" }
+        var i = 2
+        while existing.contains("新游戏 \(i)") { i += 1 }
+        return "新游戏 \(i)"
     }
 }
