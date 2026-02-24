@@ -1,2 +1,13 @@
 README_CN.md
 VNLaucherApp/
+
+# macOS
+.DS_Store
+
+# VNLauncherZero build outputs
+VNLauncherZero/.build/
+VNLauncherZero/dist/
+
+# Generated icon artifacts (source logo can be kept)
+VNLauncherZero/assets/AppIcon.iconset/
+VNLauncherZero/assets/VNLauncherZero.icns
