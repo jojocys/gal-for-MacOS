@@ -254,6 +254,15 @@ final class AppStore: ObservableObject {
         RuntimeManager.openPrivacySecuritySettings()
     }
 
+    func installEmbeddedXQuartz() {
+        guard let path = RuntimeManager.resolveEmbeddedXQuartzInstaller() else {
+            statusMessage = "未找到内置 XQuartz 安装包。请重新打包，或确认桌面存在 XQuartz.pkg。"
+            return
+        }
+        NSWorkspace.shared.open(URL(fileURLWithPath: path))
+        statusMessage = "已打开 XQuartz 安装包"
+    }
+
     func openRosettaGuide() { RuntimeManager.openRosettaGuide() }
     func openPrivacySettings() { RuntimeManager.openPrivacySecuritySettings() }
     func openWineDownloadPage() { RuntimeManager.openWineDownloadPage() }
@@ -261,20 +270,24 @@ final class AppStore: ObservableObject {
 
     func copyTerminalInstallCommands() {
         let commands = [
-            "# Rosetta 2（Apple Silicon）",
+            "# GAL FOR MacOS：Wine 已内置，无需单独安装 Wine",
+            "",
+            "# 1) Rosetta 2（Apple Silicon 必需/建议）",
             "/usr/sbin/softwareupdate --install-rosetta --agree-to-license",
             "",
-            "# XQuartz",
+            "# 2) XQuartz（部分 Wine 场景需要，二选一）",
+            "# 方式 A：使用 App 内置的一键安装按钮（推荐）",
+            "# 方式 B：终端安装",
             "brew install --cask xquartz",
             "",
-            "# Wine Stable（Homebrew）",
-            "brew install --cask --no-quarantine wine-stable"
+            "# 如未安装 Homebrew，先执行：",
+            "/bin/bash -c \"$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)\""
         ].joined(separator: "\n")
 
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         pasteboard.setString(commands, forType: .string)
-        statusMessage = "已复制终端安装命令（Rosetta / XQuartz / Wine）"
+        statusMessage = "已复制终端安装命令（Rosetta / XQuartz；Wine 已内置）"
     }
 
     func downloadAndOpenWineInstaller() {

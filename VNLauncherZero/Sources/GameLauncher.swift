@@ -14,7 +14,7 @@ enum GameLauncherError: LocalizedError {
         case .gameFolderMissing: return "游戏目录不存在。"
         case .exeMissing: return "主程序 EXE 不存在。"
         case .prefixCreateFailed: return "无法创建 Wine Prefix 文件夹。"
-        case .wineNotFound: return "未找到 Wine。请先在 P2 安装或手动指定 Wine。"
+        case .wineNotFound: return "未找到 Wine。请使用内置 Wine 版本的 App，或手动指定 Wine。"
         case .logCreateFailed: return "无法创建日志文件。"
         }
     }

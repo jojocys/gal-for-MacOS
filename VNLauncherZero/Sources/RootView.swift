@@ -88,14 +88,23 @@ struct RootView: View {
 
             VStack(spacing: 10) {
                 Button {
-                    store.chooseAndScanGameFolder()
+                    store.addEmptyGame()
                 } label: {
-                    Label("添加游戏文件夹", systemImage: "folder.badge.plus")
+                    Label("添加新配置", systemImage: "plus")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
                 .tint(Color.green.opacity(0.85))
+
+                Button {
+                    store.chooseAndScanGameFolder()
+                } label: {
+                    Text("更改游戏文件夹")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
 
                 Button {
                     store.openSelectedGameFolder()
@@ -185,7 +194,7 @@ struct RootView: View {
                     HStack(spacing: 14) {
                         stepPill("P1", "选择游戏")
                         stepPill("P2", "运行环境")
-                        stepPill("P3", "启动与导出")
+                        stepPill("P3", "启动游戏")
                     }
                     .padding(.top, 8)
                 }
@@ -381,18 +390,9 @@ struct RootView: View {
                     .buttonStyle(.bordered)
                 }
 
-                Text("这里会检测 Wine / Rosetta / XQuartz / Gatekeeper。你可以直接点按钮打开官网或系统设置，不需要终端命令。")
+                Text("这里会检测内置 Wine / Rosetta / XQuartz / Gatekeeper。已内置 Wine 的打包版无需再单独下载 Wine。")
                     .font(.headline)
                     .foregroundStyle(.white.opacity(0.85))
-
-                if !store.downloadStatusText.isEmpty {
-                    Text(store.downloadStatusText)
-                        .font(.callout)
-                        .foregroundStyle(.white.opacity(0.9))
-                        .padding(10)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.04)))
-                }
 
                 ForEach(store.runtimeReport.items) { item in
                     HStack(alignment: .top, spacing: 12) {
@@ -419,26 +419,10 @@ struct RootView: View {
 
                 VStack(alignment: .leading, spacing: 10) {
                     HStack(spacing: 10) {
-                        Button("下载并打开 Wine 安装包") { store.downloadAndOpenWineInstaller() }
+                        Button("一键安装 XQuartz（内置）") { store.installEmbeddedXQuartz() }
                             .buttonStyle(.borderedProminent)
-                            .disabled(store.isDownloadingInstaller)
-                        Button("下载并打开 XQuartz 安装包") { store.downloadAndOpenXQuartzInstaller() }
-                            .buttonStyle(.bordered)
-                            .disabled(store.isDownloadingInstaller)
-                        Button("复制终端安装命令") { store.copyTerminalInstallCommands() }
-                            .buttonStyle(.bordered)
-                    }
-
-                    HStack(spacing: 10) {
-                        Button("打开 Wine 下载页") { store.openWineDownloadPage() }.buttonStyle(.bordered)
-                        Button("打开 XQuartz 官网") { store.openXQuartzDownloadPage() }.buttonStyle(.bordered)
-                        Button("打开 Rosetta 安装说明") { store.openRosettaGuide() }.buttonStyle(.bordered)
-                    }
-
-                    HStack(spacing: 10) {
+                            .tint(Color.orange.opacity(0.85))
                         Button("打开“隐私与安全性”") { store.openPrivacySettings() }.buttonStyle(.bordered)
-                        Button("手动选择 Wine.app") { store.chooseWineApp() }.buttonStyle(.bordered)
-                        Button("手动选择 Wine 可执行文件") { store.chooseWineBinary() }.buttonStyle(.bordered)
                     }
                 }
             }

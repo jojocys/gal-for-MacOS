@@ -1,52 +1,52 @@
 {
   "": {
-    "dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZero.d",
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZero.o",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/master.swiftdeps"
+    "dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZero.d",
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZero.o",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/master.swiftdeps"
   },
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/AppStore.swift": {
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppStore.swift.o",
-    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppStore~partial.swiftmodule",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppStore.swiftdeps"
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/AppStore.swift": {
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppStore.swift.o",
+    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppStore~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/AppStore.swiftdeps"
   },
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/GameLauncher.swift": {
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameLauncher.swift.o",
-    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameLauncher~partial.swiftmodule",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameLauncher.swiftdeps"
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/GameLauncher.swift": {
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameLauncher.swift.o",
+    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameLauncher~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameLauncher.swiftdeps"
   },
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/GameScanner.swift": {
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameScanner.swift.o",
-    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameScanner~partial.swiftmodule",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameScanner.swiftdeps"
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/GameScanner.swift": {
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameScanner.swift.o",
+    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameScanner~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/GameScanner.swiftdeps"
   },
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/Models.swift": {
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/Models.swift.o",
-    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/Models~partial.swiftmodule",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/Models.swiftdeps"
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/Models.swift": {
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/Models.swift.o",
+    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/Models~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/Models.swiftdeps"
   },
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/PlatformPickers.swift": {
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformPickers.swift.o",
-    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformPickers~partial.swiftmodule",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformPickers.swiftdeps"
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/PlatformPickers.swift": {
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformPickers.swift.o",
+    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformPickers~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/PlatformPickers.swiftdeps"
   },
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/RootView.swift": {
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RootView.swift.o",
-    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RootView~partial.swiftmodule",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RootView.swiftdeps"
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/RootView.swift": {
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RootView.swift.o",
+    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RootView~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RootView.swiftdeps"
   },
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/RuntimeInstaller.swift": {
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeInstaller.swift.o",
-    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeInstaller~partial.swiftmodule",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeInstaller.swiftdeps"
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/RuntimeInstaller.swift": {
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeInstaller.swift.o",
+    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeInstaller~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeInstaller.swiftdeps"
   },
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/RuntimeManager.swift": {
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeManager.swift.o",
-    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeManager~partial.swiftmodule",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeManager.swiftdeps"
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/RuntimeManager.swift": {
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeManager.swift.o",
+    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeManager~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/RuntimeManager.swiftdeps"
   },
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/Sources/VNLauncherZeroApp.swift": {
-    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZeroApp.swift.o",
-    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZeroApp~partial.swiftmodule",
-    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZeroApp.swiftdeps"
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/VNLauncherZeroApp.swift": {
+    "object": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZeroApp.swift.o",
+    "swiftmodule": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZeroApp~partial.swiftmodule",
+    "swift-dependencies": "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/.build/arm64-apple-macosx/release/VNLauncherZero.build/VNLauncherZeroApp.swiftdeps"
   }
 }

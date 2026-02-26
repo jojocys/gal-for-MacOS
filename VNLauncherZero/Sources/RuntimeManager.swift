@@ -15,14 +15,15 @@ enum RuntimeManager {
         if wineBinary.isEmpty {
             items.append(RuntimeCheckItem(
                 title: "Wine 引擎",
-                detail: "未检测到 wine/wine64。请在本页下载并安装，或手动指定 Wine。",
+                detail: "未检测到 Wine。请使用内置 Wine 版本打包的 App，或手动指定 Wine。",
                 state: .missing
             ))
         } else {
             let state: RuntimeCheckItem.State = gatekeeperBlocked ? .blocked : .ok
+            let sourceLabel = isBundledWinePath(wineBinary) ? "（内置 Wine）" : "（系统/手动 Wine）"
             items.append(RuntimeCheckItem(
                 title: "Wine 引擎",
-                detail: "已检测到 Wine 执行文件\n\(wineBinary)",
+                detail: "已检测到 Wine 执行文件 \(sourceLabel)\n\(wineBinary)",
                 state: state
             ))
         }
@@ -86,6 +87,10 @@ enum RuntimeManager {
 
     static func resolveWineBinary(preferred: String) -> String? {
         let fm = FileManager.default
+        if let bundled = resolveBundledWineBinary(), fm.isExecutableFile(atPath: bundled) {
+            return bundled
+        }
+
         if !preferred.isEmpty, fm.isExecutableFile(atPath: preferred) {
             return preferred
         }
@@ -106,6 +111,10 @@ enum RuntimeManager {
 
     static func resolveWineApp(preferred: String) -> String? {
         let fm = FileManager.default
+        if let bundled = resolveBundledWineApp(), fm.fileExists(atPath: bundled) {
+            return bundled
+        }
+
         if !preferred.isEmpty, fm.fileExists(atPath: preferred) { return preferred }
 
         let common = [
@@ -125,6 +134,57 @@ enum RuntimeManager {
         ]
         let fm = FileManager.default
         return paths.first(where: { fm.fileExists(atPath: $0) })
+    }
+
+    static func resolveEmbeddedXQuartzInstaller() -> String? {
+        let fm = FileManager.default
+        let bundled = Bundle.main.resourceURL?.appendingPathComponent("Installers/XQuartz.pkg").path
+        if let bundled, fm.fileExists(atPath: bundled) { return bundled }
+
+        // Development fallback when running from Xcode before packaging:
+        // search Downloads/Desktop and mounted DMG volumes.
+        let simpleCandidates = [
+            NSHomeDirectory() + "/Downloads/XQuartz.pkg",
+            NSHomeDirectory() + "/Desktop/XQuartz.pkg",
+            NSHomeDirectory() + "/Downloads/XQuartz-2.8.5.pkg",
+            NSHomeDirectory() + "/Desktop/XQuartz-2.8.5.pkg"
+        ]
+        if let path = simpleCandidates.first(where: { fm.fileExists(atPath: $0) }) {
+            return path
+        }
+
+        // Mounted DMG commonly appears under /Volumes/XQuartz*/...
+        let volumesURL = URL(fileURLWithPath: "/Volumes", isDirectory: true)
+        if let volumes = try? fm.contentsOfDirectory(at: volumesURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) {
+            for volume in volumes where volume.lastPathComponent.lowercased().contains("xquartz") {
+                if let files = try? fm.contentsOfDirectory(at: volume, includingPropertiesForKeys: [.isRegularFileKey], options: [.skipsHiddenFiles]) {
+                    if let pkg = files.first(where: { $0.lastPathComponent.lowercased().hasPrefix("xquartz") && $0.pathExtension.lowercased() == "pkg" }) {
+                        return pkg.path
+                    }
+                }
+            }
+        }
+
+        return nil
+    }
+
+    static func resolveBundledWineBinary() -> String? {
+        let fm = FileManager.default
+        for appPath in bundledWineAppCandidates() {
+            let candidates = [
+                appPath + "/Contents/Resources/wine/bin/wine64",
+                appPath + "/Contents/Resources/wine/bin/wine"
+            ]
+            if let bin = candidates.first(where: { fm.isExecutableFile(atPath: $0) }) {
+                return bin
+            }
+        }
+        return nil
+    }
+
+    static func resolveBundledWineApp() -> String? {
+        let fm = FileManager.default
+        return bundledWineAppCandidates().first(where: { fm.fileExists(atPath: $0) })
     }
 
     private static func detectRosettaInstalled() -> Bool {
@@ -157,6 +217,19 @@ enum RuntimeManager {
             return appPath.hasPrefix("/") ? appPath : "/" + appPath
         }
         return nil
+    }
+
+    private static func bundledWineAppCandidates() -> [String] {
+        guard let resources = Bundle.main.resourceURL?.path else { return [] }
+        return [
+            resources + "/EmbeddedWine/Wine Stable.app",
+            resources + "/EmbeddedWine/Wine.app"
+        ]
+    }
+
+    private static func isBundledWinePath(_ path: String) -> Bool {
+        guard let resources = Bundle.main.resourceURL?.path else { return false }
+        return path.hasPrefix(resources + "/EmbeddedWine/")
     }
 
     private static func shell(_ command: String) -> String? {
