@@ -45,6 +45,7 @@ enum GameLauncher {
         guard let wineBinary = RuntimeManager.resolveWineBinary(preferred: preferredWineBinaryPath) else {
             throw GameLauncherError.wineNotFound
         }
+        let locale = resolveLocale(for: game)
 
         let logURL = logsDir.appendingPathComponent(logFileName(for: game))
         guard fm.createFile(atPath: logURL.path, contents: nil) || fm.fileExists(atPath: logURL.path) else {
@@ -58,6 +59,8 @@ enum GameLauncher {
             "EXE=\(exeURL.path)",
             "PREFIX=\(prefixURL.path)",
             "WINE=\(wineBinary)",
+            "LANG_MODE=\(game.launchLanguageMode.rawValue)",
+            "LANG=\(locale)",
             ""
         ].joined(separator: "\n")
         if let data = prelude.data(using: .utf8) {
@@ -74,8 +77,8 @@ enum GameLauncher {
         var env = ProcessInfo.processInfo.environment
         env["WINEPREFIX"] = prefixURL.path
         env["WINEDEBUG"] = "-all"
-        env["LANG"] = "ja_JP.UTF-8"
-        env["LC_ALL"] = "ja_JP.UTF-8"
+        env["LANG"] = locale
+        env["LC_ALL"] = locale
         process.environment = env
         process.standardOutput = fileHandle
         process.standardError = fileHandle
@@ -90,6 +93,26 @@ enum GameLauncher {
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         let safe = game.name.replacingOccurrences(of: "/", with: "_")
         return "\(safe)-\(formatter.string(from: Date())).log"
+    }
+
+    private static func resolveLocale(for game: GameEntry) -> String {
+        switch game.launchLanguageMode {
+        case .japanese:
+            return "ja_JP.UTF-8"
+        case .chineseSimplified:
+            return "zh_CN.UTF-8"
+        case .auto:
+            let samples = [
+                game.name.lowercased(),
+                game.exePath.lowercased(),
+                game.gameFolderPath.lowercased()
+            ].joined(separator: " ")
+            let chineseHints = ["汉化", "簡中", "简中", "zh_cn", "chs", "gbk", "中文", "cn_patch", "chinese"]
+            if chineseHints.contains(where: { samples.contains($0.lowercased()) }) {
+                return "zh_CN.UTF-8"
+            }
+            return "ja_JP.UTF-8"
+        }
     }
 }
 

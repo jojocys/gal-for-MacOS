@@ -1,5 +1,21 @@
 import Foundation
 
+enum LaunchLanguageMode: String, Codable, CaseIterable, Identifiable {
+    case auto
+    case japanese
+    case chineseSimplified
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .auto: return "自动"
+        case .japanese: return "日文"
+        case .chineseSimplified: return "简中"
+        }
+    }
+}
+
 struct GameEntry: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
@@ -7,6 +23,7 @@ struct GameEntry: Identifiable, Codable, Hashable {
     var exePath: String
     var prefixDir: String
     var engineHint: String
+    var launchLanguageMode: LaunchLanguageMode
     var notes: String
     var createdAt: Date
     var updatedAt: Date
@@ -18,6 +35,7 @@ struct GameEntry: Identifiable, Codable, Hashable {
         exePath: String = "",
         prefixDir: String = "",
         engineHint: String = "未识别",
+        launchLanguageMode: LaunchLanguageMode = .auto,
         notes: String = "",
         createdAt: Date = Date(),
         updatedAt: Date = Date()
@@ -28,9 +46,37 @@ struct GameEntry: Identifiable, Codable, Hashable {
         self.exePath = exePath
         self.prefixDir = prefixDir
         self.engineHint = engineHint
+        self.launchLanguageMode = launchLanguageMode
         self.notes = notes
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case gameFolderPath
+        case exePath
+        case prefixDir
+        case engineHint
+        case launchLanguageMode
+        case notes
+        case createdAt
+        case updatedAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decodeIfPresent(String.self, forKey: .name) ?? "未命名游戏"
+        gameFolderPath = try container.decodeIfPresent(String.self, forKey: .gameFolderPath) ?? ""
+        exePath = try container.decodeIfPresent(String.self, forKey: .exePath) ?? ""
+        prefixDir = try container.decodeIfPresent(String.self, forKey: .prefixDir) ?? ""
+        engineHint = try container.decodeIfPresent(String.self, forKey: .engineHint) ?? "未识别"
+        launchLanguageMode = try container.decodeIfPresent(LaunchLanguageMode.self, forKey: .launchLanguageMode) ?? .auto
+        notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
+        updatedAt = try container.decodeIfPresent(Date.self, forKey: .updatedAt) ?? Date()
     }
 
     var folderURL: URL? {
@@ -81,6 +127,7 @@ struct ScanResult {
 struct RuntimeCheckItem: Identifiable {
     enum State {
         case ok
+        case bundled
         case warning
         case missing
         case blocked
@@ -88,6 +135,7 @@ struct RuntimeCheckItem: Identifiable {
         var label: String {
             switch self {
             case .ok: return "就绪"
+            case .bundled: return "已内置"
             case .warning: return "需注意"
             case .missing: return "未安装"
             case .blocked: return "被拦截"

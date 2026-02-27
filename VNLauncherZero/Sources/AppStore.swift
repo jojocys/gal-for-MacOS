@@ -95,11 +95,24 @@ final class AppStore: ObservableObject {
         }
     }
 
-    func refreshRuntimeStatus() {
-        runtimeReport = RuntimeManager.detect(
+    func refreshRuntimeStatus(userInitiated: Bool = false) {
+        let report = RuntimeManager.detect(
             preferredWineBinaryPath: preferredWineBinaryPath,
             preferredWineAppPath: preferredWineAppPath
         )
+        runtimeReport = report
+        if userInitiated {
+            let summary: String
+            if report.resolvedWineBinaryPath.isEmpty {
+                summary = "未检测到 Wine"
+            } else {
+                summary = "已重新检测运行环境"
+            }
+            statusMessage = summary
+            if !downloadStatusText.isEmpty {
+                downloadStatusText = ""
+            }
+        }
     }
 
     func selectGame(_ id: UUID?) {
@@ -177,6 +190,12 @@ final class AppStore: ObservableObject {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
         updateSelected { game in
             game.name = trimmed.isEmpty ? "未命名游戏" : trimmed
+        }
+    }
+
+    func setSelectedLaunchLanguage(_ mode: LaunchLanguageMode) {
+        updateSelected { game in
+            game.launchLanguageMode = mode
         }
     }
 

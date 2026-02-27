@@ -383,7 +383,7 @@ struct RootView: View {
                         .foregroundStyle(.white)
                     Spacer()
                     Button {
-                        store.refreshRuntimeStatus()
+                        store.refreshRuntimeStatus(userInitiated: true)
                     } label: {
                         Label("重新检测", systemImage: "arrow.clockwise")
                     }
@@ -460,6 +460,24 @@ struct RootView: View {
                     }
                     .padding(12)
                     .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
+
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("启动语言模式")
+                            .font(.headline)
+                            .foregroundStyle(.white.opacity(0.85))
+                        Picker(
+                            "启动语言模式",
+                            selection: Binding(
+                                get: { store.selectedGame?.launchLanguageMode ?? .auto },
+                                set: { store.setSelectedLaunchLanguage($0) }
+                            )
+                        ) {
+                            ForEach(LaunchLanguageMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
                 }
 
                 Button {
@@ -538,6 +556,7 @@ struct RootView: View {
     private func color(for state: RuntimeCheckItem.State) -> Color {
         switch state {
         case .ok: return .green
+        case .bundled: return .blue
         case .warning: return .yellow
         case .missing: return .orange
         case .blocked: return .red

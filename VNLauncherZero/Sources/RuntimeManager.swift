@@ -5,6 +5,7 @@ enum RuntimeManager {
     static func detect(preferredWineBinaryPath: String, preferredWineAppPath: String) -> RuntimeCheckReport {
         let wineBinary = resolveWineBinary(preferred: preferredWineBinaryPath) ?? ""
         let wineApp = resolveWineApp(preferred: preferredWineAppPath) ?? ""
+        let bundledWine = isBundledWinePath(wineBinary)
         let rosettaInstalled = detectRosettaInstalled()
         let xquartzApp = resolveXQuartzApp() ?? ""
         let xquartzInstalled = !xquartzApp.isEmpty
@@ -19,8 +20,8 @@ enum RuntimeManager {
                 state: .missing
             ))
         } else {
-            let state: RuntimeCheckItem.State = gatekeeperBlocked ? .blocked : .ok
-            let sourceLabel = isBundledWinePath(wineBinary) ? "（内置 Wine）" : "（系统/手动 Wine）"
+            let state: RuntimeCheckItem.State = bundledWine ? .bundled : (gatekeeperBlocked ? .blocked : .ok)
+            let sourceLabel = bundledWine ? "（内置 Wine）" : "（系统/手动 Wine）"
             items.append(RuntimeCheckItem(
                 title: "Wine 引擎",
                 detail: "已检测到 Wine 执行文件 \(sourceLabel)\n\(wineBinary)",
@@ -42,7 +43,11 @@ enum RuntimeManager {
 
         items.append(RuntimeCheckItem(
             title: "macOS 安全拦截 (Gatekeeper)",
-            detail: gatekeeperBlocked ? "检测到 Wine.app 可能带隔离标记。先打开系统设置 -> 隐私与安全性 -> 允许。" : "未发现明显拦截标记（首次运行仍可能提示）。",
+            detail: gatekeeperBlocked
+                ? (bundledWine
+                    ? "检测到内置 Wine/主 App 可能带隔离标记。首次运行请打开“隐私与安全性”并允许。"
+                    : "检测到 Wine.app 可能带隔离标记。先打开系统设置 -> 隐私与安全性 -> 允许。")
+                : "未发现明显拦截标记（首次运行仍可能提示）。",
             state: gatekeeperBlocked ? .blocked : .ok
         ))
 
