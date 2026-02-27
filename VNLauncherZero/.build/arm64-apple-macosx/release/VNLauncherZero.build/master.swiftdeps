@@ -1,7 +1,7 @@
 version: "Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2 clang-1700.0.13.5)"
 options: "35f103af41bdceffb8b39b4d49c256538501ae715e617bebfecd56ca17226bc2"
-build_start_time: [1772186793, 703225000]
-build_end_time: [1772186799, 824716000]
+build_start_time: [1772187345, 600482000]
+build_end_time: [1772187352, 175959000]
 inputs:
   "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/AppStore.swift": [1772186487, 40936220]
   "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/GameLauncher.swift": [1772186521, 979733061]
