@@ -158,6 +158,12 @@ struct RuntimeCheckReport {
     var gatekeeperBlocked: Bool
 }
 
+struct WineSteamEntryContext: Hashable {
+    var steamExePath: String
+    var prefixPath: String
+    var sourceLabel: String
+}
+
 struct InstallerDownloadResult {
     let downloadedFileURL: URL
     let sourceURL: URL

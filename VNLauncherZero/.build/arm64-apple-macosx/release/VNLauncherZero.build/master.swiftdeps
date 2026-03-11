@@ -1,14 +1,14 @@
 version: "Apple Swift version 6.1.2 (swiftlang-6.1.2.1.2 clang-1700.0.13.5)"
 options: "35f103af41bdceffb8b39b4d49c256538501ae715e617bebfecd56ca17226bc2"
-build_start_time: [1772187345, 600482000]
-build_end_time: [1772187352, 175959000]
+build_start_time: [1773217383, 434587000]
+build_end_time: [1773217390, 494991000]
 inputs:
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/AppStore.swift": [1772186487, 40936220]
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/AppStore.swift": [1773217339, 651402233]
   "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/GameLauncher.swift": [1772186521, 979733061]
   "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/GameScanner.swift": [1771947656, 776238142]
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/Models.swift": [1772186447, 986801789]
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/Models.swift": [1772620408, 838015256]
   "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/PlatformPickers.swift": [1771948643, 972195099]
-  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/RootView.swift": [1772186566, 731447685]
+  "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/RootView.swift": [1773217347, 962783645]
   "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/RuntimeInstaller.swift": [1771947747, 160303399]
   "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/RuntimeManager.swift": [1772099659, 911845939]
   "/Users/gaoxiaoli/Desktop/gal for MacOS/gal-for-MacOS/VNLauncherZero/Sources/VNLauncherZeroApp.swift": [1771947972, 483228827]

@@ -147,7 +147,56 @@ struct RootView: View {
                 .font(.caption)
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 12)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("快捷入口")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.white.opacity(0.8))
+                Text("直接打开 Wine Steam 客户端，不依赖当前游戏配置。")
+                    .font(.caption2)
+                    .foregroundStyle(.white.opacity(0.62))
+                Button {
+                    store.launchWineSteamEntry()
+                } label: {
+                    Label("启动 Wine Steam 客户端", systemImage: "steam")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(.blue)
+
+                Button {
+                    store.downloadAndOpenWineSteamInstaller()
+                } label: {
+                    Label("下载 Wine Steam", systemImage: "arrow.down.circle")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .disabled(store.isDownloadingInstaller)
+
+                Button(role: .destructive) {
+                    store.stopWineSteamProcesses()
+                } label: {
+                    Label("关闭 Wine Steam 进程", systemImage: "power")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+
+                if !store.downloadStatusText.isEmpty {
+                    Text(store.downloadStatusText)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.62))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(12)
+            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
+            .padding(.horizontal, 10)
+            .padding(.bottom, 12)
         }
         .frame(minWidth: 360)
         .background(

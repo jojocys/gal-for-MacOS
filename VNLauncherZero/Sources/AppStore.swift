@@ -4,6 +4,8 @@ import SwiftUI
 
 @MainActor
 final class AppStore: ObservableObject {
+    private static let steamInstallerURL = URL(string: "https://cdn.cloudflare.steamstatic.com/client/installer/SteamSetup.exe")!
+
     @Published var games: [GameEntry] = []
     @Published var selectedGameID: UUID?
     @Published var statusMessage: String = "欢迎使用：先在 P1 选择游戏文件夹。"
@@ -43,6 +45,18 @@ final class AppStore: ObservableObject {
     var selectedGame: GameEntry? {
         guard let idx = selectedIndex else { return nil }
         return games[idx]
+    }
+
+    var wineSteamTips: [String] {
+        [
+            "“一键关闭”会终止 Wine Steam 与其子进程，正在运行的 Steam 游戏会被强制退出。",
+            "入口优先使用专用 Prefix：~/.vnlauncher/steam-prefix（兼容检测 ~/.vnlauncher-zero/steam-prefix）。",
+            "如果提示未找到 Windows Steam，请先在该 Prefix 中完成一次安装。"
+        ]
+    }
+
+    var wineSteamEntryContext: WineSteamEntryContext? {
+        resolveWineSteamEntryContext()
     }
 
     func load() {
@@ -223,6 +237,89 @@ final class AppStore: ObservableObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
+    func launchWineSteamEntry() {
+        refreshRuntimeStatus()
+        let wineBinary = runtimeReport.resolvedWineBinaryPath.isEmpty
+            ? (RuntimeManager.resolveWineBinary(preferred: preferredWineBinaryPath) ?? "")
+            : runtimeReport.resolvedWineBinaryPath
+
+        guard !wineBinary.isEmpty else {
+            statusMessage = "未检测到 Wine。请先在 P2 选择/安装 Wine。"
+            return
+        }
+
+        guard let context = resolveWineSteamEntryContext() else {
+            if launchSteamInstallerIfAvailable(wineBinary: wineBinary) {
+                return
+            }
+            statusMessage = "未找到 Windows Steam（Steam.exe）。请先安装 Wine 版 Steam。"
+            return
+        }
+
+        do {
+            try fm.createDirectory(atPath: context.prefixPath, withIntermediateDirectories: true, attributes: nil)
+        } catch {
+            statusMessage = "无法创建/访问 Steam Prefix：\(error.localizedDescription)"
+            return
+        }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: wineBinary)
+        process.arguments = [context.steamExePath, "-no-cef-sandbox", "-foreground"]
+        process.currentDirectoryURL = URL(fileURLWithPath: context.steamExePath).deletingLastPathComponent()
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        var env = ProcessInfo.processInfo.environment
+        env["WINEPREFIX"] = context.prefixPath
+        process.environment = env
+
+        do {
+            try process.run()
+            statusMessage = "已启动 Wine Steam（\(context.sourceLabel)）。"
+        } catch {
+            statusMessage = "启动 Wine Steam 失败：\(error.localizedDescription)"
+        }
+    }
+
+    func stopWineSteamProcesses() {
+        let context = resolveWineSteamEntryContext()
+        var matchedKinds = 0
+
+        let patterns = [
+            "Steam.exe",
+            "steamwebhelper.exe",
+            "steamservice.exe",
+            "steamerrorreporter",
+            "gameoverlayui.exe"
+        ]
+
+        for pattern in patterns {
+            if runSyncCommand("/usr/bin/pkill", arguments: ["-f", pattern], extraEnvironment: nil) == 0 {
+                matchedKinds += 1
+            }
+        }
+
+        refreshRuntimeStatus()
+        let wineBinary = runtimeReport.resolvedWineBinaryPath.isEmpty
+            ? (RuntimeManager.resolveWineBinary(preferred: preferredWineBinaryPath) ?? "")
+            : runtimeReport.resolvedWineBinaryPath
+
+        if
+            !wineBinary.isEmpty,
+            let wineserver = resolveWineserverPath(fromWineBinary: wineBinary),
+            let prefixPath = context?.prefixPath,
+            !prefixPath.isEmpty
+        {
+            _ = runSyncCommand(wineserver, arguments: ["-k"], extraEnvironment: ["WINEPREFIX": prefixPath])
+            _ = runSyncCommand(wineserver, arguments: ["-w"], extraEnvironment: ["WINEPREFIX": prefixPath])
+        }
+
+        statusMessage = matchedKinds == 0
+            ? "未发现正在运行的 Wine Steam 进程。"
+            : "已请求关闭 Wine Steam 相关进程（命中 \(matchedKinds) 类进程）。"
+    }
+
     func applyRecommendedCandidate(_ candidate: ScanCandidate) {
         updateSelected { game in
             game.exePath = candidate.exeURL.path
@@ -317,6 +414,32 @@ final class AppStore: ObservableObject {
         downloadAndOpenInstaller(.xquartz)
     }
 
+    func downloadAndOpenWineSteamInstaller() {
+        guard !isDownloadingInstaller else { return }
+        isDownloadingInstaller = true
+        downloadStatusText = "正在下载 Wine Steam 安装器..."
+
+        Task {
+            defer {
+                Task { @MainActor in self.isDownloadingInstaller = false }
+            }
+
+            do {
+                let installerURL = try await downloadWineSteamInstaller()
+                await MainActor.run {
+                    NSWorkspace.shared.open(installerURL)
+                    self.downloadStatusText = "Wine Steam 安装器已下载并打开：\(installerURL.lastPathComponent)"
+                    self.statusMessage = "已打开 Wine Steam 安装器"
+                }
+            } catch {
+                await MainActor.run {
+                    self.downloadStatusText = "Wine Steam 下载失败：\(error.localizedDescription)"
+                    self.statusMessage = self.downloadStatusText
+                }
+            }
+        }
+    }
+
     func downloadAndOpenInstaller(_ kind: RuntimeInstaller.InstallerKind) {
         guard !isDownloadingInstaller else { return }
         isDownloadingInstaller = true
@@ -380,6 +503,163 @@ final class AppStore: ObservableObject {
         try? fm.createDirectory(at: appDataDir, withIntermediateDirectories: true)
         try? fm.createDirectory(at: logsDir, withIntermediateDirectories: true)
         try? fm.createDirectory(at: prefixesDir, withIntermediateDirectories: true)
+    }
+
+    private func resolveWineSteamEntryContext() -> WineSteamEntryContext? {
+        let home = fm.homeDirectoryForCurrentUser
+        let candidates: [(steamExe: URL, prefix: URL, source: String)] = [
+            (
+                appDataDir
+                    .appendingPathComponent("steam-prefix", isDirectory: true)
+                    .appendingPathComponent("drive_c", isDirectory: true)
+                    .appendingPathComponent("Program Files (x86)", isDirectory: true)
+                    .appendingPathComponent("Steam", isDirectory: true)
+                    .appendingPathComponent("Steam.exe"),
+                appDataDir.appendingPathComponent("steam-prefix", isDirectory: true),
+                "专用 Steam Prefix（.vnlauncher）"
+            ),
+            (
+                home
+                    .appendingPathComponent(".vnlauncher-zero", isDirectory: true)
+                    .appendingPathComponent("steam-prefix", isDirectory: true)
+                    .appendingPathComponent("drive_c", isDirectory: true)
+                    .appendingPathComponent("Program Files (x86)", isDirectory: true)
+                    .appendingPathComponent("Steam", isDirectory: true)
+                    .appendingPathComponent("Steam.exe"),
+                home
+                    .appendingPathComponent(".vnlauncher-zero", isDirectory: true)
+                    .appendingPathComponent("steam-prefix", isDirectory: true),
+                "兼容 Steam Prefix（.vnlauncher-zero）"
+            )
+        ]
+
+        for candidate in candidates where fm.fileExists(atPath: candidate.steamExe.path) {
+            return WineSteamEntryContext(
+                steamExePath: candidate.steamExe.path,
+                prefixPath: candidate.prefix.path,
+                sourceLabel: candidate.source
+            )
+        }
+
+        if let inferred = inferFromRunningPrefixes() {
+            return inferred
+        }
+
+        return nil
+    }
+
+    private func launchSteamInstallerIfAvailable(wineBinary: String) -> Bool {
+        guard let installer = existingSteamInstallerURL() else {
+            return false
+        }
+
+        let defaultPrefix = appDataDir.appendingPathComponent("steam-prefix", isDirectory: true)
+        try? fm.createDirectory(at: defaultPrefix, withIntermediateDirectories: true)
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: wineBinary)
+        process.arguments = [installer.path]
+        process.currentDirectoryURL = installer.deletingLastPathComponent()
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        var env = ProcessInfo.processInfo.environment
+        env["WINEPREFIX"] = defaultPrefix.path
+        process.environment = env
+
+        do {
+            try process.run()
+            statusMessage = "未检测到 Steam 客户端，已自动启动 Steam 安装器。安装完成后再点一次即可。"
+            return true
+        } catch {
+            statusMessage = "启动 Steam 安装器失败：\(error.localizedDescription)"
+            return true
+        }
+    }
+
+    private func existingSteamInstallerURL() -> URL? {
+        let home = fm.homeDirectoryForCurrentUser
+        let installerCandidates: [URL] = [
+            appDataDir
+                .appendingPathComponent("downloads", isDirectory: true)
+                .appendingPathComponent("SteamSetup.exe"),
+            home
+                .appendingPathComponent(".vnlauncher-zero", isDirectory: true)
+                .appendingPathComponent("downloads", isDirectory: true)
+                .appendingPathComponent("SteamSetup.exe")
+        ]
+
+        return installerCandidates.first(where: { fm.fileExists(atPath: $0.path) })
+    }
+
+    private func downloadWineSteamInstaller() async throws -> URL {
+        let downloadsDir = appDataDir.appendingPathComponent("downloads", isDirectory: true)
+        try fm.createDirectory(at: downloadsDir, withIntermediateDirectories: true)
+
+        let targetURL = downloadsDir.appendingPathComponent("SteamSetup.exe")
+        let session = URLSession(configuration: .default)
+        var request = URLRequest(url: Self.steamInstallerURL)
+        request.setValue("GAL-FOR-MacOS/1.0", forHTTPHeaderField: "User-Agent")
+
+        let (tmpURL, response) = try await session.download(for: request)
+        guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
+            throw NSError(
+                domain: "WineSteamInstaller",
+                code: 1,
+                userInfo: [NSLocalizedDescriptionKey: "Steam 安装器下载失败（服务器返回异常）。"]
+            )
+        }
+
+        try? fm.removeItem(at: targetURL)
+        try fm.moveItem(at: tmpURL, to: targetURL)
+        return targetURL
+    }
+
+    private func inferFromRunningPrefixes() -> WineSteamEntryContext? {
+        guard let selected = selectedGame else { return nil }
+        let possibleSteamExe = URL(fileURLWithPath: selected.prefixDir)
+            .appendingPathComponent("drive_c", isDirectory: true)
+            .appendingPathComponent("Program Files (x86)", isDirectory: true)
+            .appendingPathComponent("Steam", isDirectory: true)
+            .appendingPathComponent("Steam.exe")
+
+        guard fm.fileExists(atPath: possibleSteamExe.path), !selected.prefixDir.isEmpty else { return nil }
+        return WineSteamEntryContext(
+            steamExePath: possibleSteamExe.path,
+            prefixPath: selected.prefixDir,
+            sourceLabel: "当前游戏 Prefix"
+        )
+    }
+
+    @discardableResult
+    private func runSyncCommand(_ executable: String, arguments: [String], extraEnvironment: [String: String]?) -> Int32 {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: executable)
+        process.arguments = arguments
+        process.standardOutput = Pipe()
+        process.standardError = Pipe()
+
+        if let extraEnvironment {
+            var env = ProcessInfo.processInfo.environment
+            env.merge(extraEnvironment) { _, new in new }
+            process.environment = env
+        }
+
+        do {
+            try process.run()
+            process.waitUntilExit()
+            return process.terminationStatus
+        } catch {
+            return -1
+        }
+    }
+
+    private func resolveWineserverPath(fromWineBinary wineBinaryPath: String) -> String? {
+        let candidate = URL(fileURLWithPath: wineBinaryPath)
+            .deletingLastPathComponent()
+            .appendingPathComponent("wineserver")
+            .path
+        return fm.isExecutableFile(atPath: candidate) ? candidate : nil
     }
 
     private func defaultPrefixDir(for name: String) -> String {
