@@ -15,6 +15,7 @@ final class AppStore: ObservableObject {
     @Published var runtimeReport = RuntimeCheckReport(items: [], resolvedWineBinaryPath: "", detectedWineAppPath: "", rosettaInstalled: false, xquartzInstalled: false, gatekeeperBlocked: false)
     @Published var isDownloadingInstaller = false
     @Published var downloadStatusText: String = ""
+    @Published var updateState = UpdateState()
 
     private let fm = FileManager.default
 
@@ -366,6 +367,28 @@ final class AppStore: ObservableObject {
         NSWorkspace.shared.open(URL(fileURLWithPath: lastLogPath))
     }
 
+    /// 检查更新：拉取仓库 version.json 与自身版本比对。userInitiated 时把结果写到状态栏。
+    func checkForUpdates(userInitiated: Bool = false) async {
+        if userInitiated {
+            updateState.phase = .checking
+            updateState.message = "正在检查更新…"
+            statusMessage = "正在检查更新…"
+        }
+        let result = await UpdateChecker.fetch()
+        updateState = result
+        if userInitiated, !result.message.isEmpty {
+            statusMessage = result.message
+        }
+    }
+
+    func openReleasesPage() {
+        let target = updateState.downloadURL.isEmpty
+            ? (AppInfo.releasesPageURL?.absoluteString ?? "")
+            : updateState.downloadURL
+        guard let url = URL(string: target) else { return }
+        NSWorkspace.shared.open(url)
+    }
+
     func openRepairGuide() {
         RuntimeManager.openPrivacySecuritySettings()
     }
@@ -479,7 +502,11 @@ final class AppStore: ObservableObject {
             }
         }
 
-        if let recommended = result.recommendedEXE {
+        if let blocker = result.antiCheats.first(where: { $0.severity == .blocking }) {
+            statusMessage = "⚠️ 检测到 \(blocker.name)：内核级反作弊，macOS 无法运行此游戏。"
+        } else if let limited = result.antiCheats.first {
+            statusMessage = "⚠️ 检测到 \(limited.name)：macOS 上几乎无法运行。"
+        } else if let recommended = result.recommendedEXE {
             statusMessage = "已扫描：推荐主程序 \(recommended.lastPathComponent)"
         } else {
             statusMessage = "已扫描文件夹，但未找到可用 EXE（可手动选择）"

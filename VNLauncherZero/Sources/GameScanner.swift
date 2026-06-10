@@ -14,6 +14,7 @@ enum GameScanner {
 
         var xp3Count = 0
         var exeURLs: [URL] = []
+        var basenames = Set<String>()
 
         while let item = enumerator?.nextObject() as? URL {
             let rel = item.path.replacingOccurrences(of: folderURL.path, with: "")
@@ -24,6 +25,10 @@ enum GameScanner {
             }
 
             guard let values = try? item.resourceValues(forKeys: [.isRegularFileKey, .isDirectoryKey]) else { continue }
+
+            // 文件与目录名都纳入反作弊特征比对（反作弊常以独立文件夹或 .sys 驱动形式存在）。
+            basenames.insert(item.lastPathComponent.lowercased())
+
             if values.isDirectory == true { continue }
             guard values.isRegularFile == true else { continue }
 
@@ -42,7 +47,65 @@ enum GameScanner {
             return $0.score > $1.score
         }
 
-        return ScanResult(folderURL: folderURL, engineHint: engineHint, xp3Count: xp3Count, exeCandidates: candidates)
+        let antiCheats = detectAntiCheats(in: basenames)
+
+        return ScanResult(
+            folderURL: folderURL,
+            engineHint: engineHint,
+            xp3Count: xp3Count,
+            exeCandidates: candidates,
+            antiCheats: antiCheats
+        )
+    }
+
+    /// 依据已知反作弊的特征文件 / 目录名识别，区分「内核级无解」与「Linux/Proton 有限可行」两档。
+    private static func detectAntiCheats(in names: Set<String>) -> [AntiCheatHit] {
+        struct Signature {
+            let name: String
+            let severity: AntiCheatSeverity
+            let advice: String
+            var contains: [String] = []
+            var exact: [String] = []
+            var prefixes: [String] = []
+        }
+
+        let kernelAdvice = "内核级反作弊：需加载 Windows 内核驱动，而 Wine 没有 NT 内核可供加载，macOS 也不允许安装该驱动，且它会主动检测并拒绝 Wine / 虚拟机环境。无官方或可靠的变通方案。"
+        let protonAdvice = "内核级反作弊：部分游戏经开发者开启后可在 Linux/Proton 运行，但 macOS 上仅能借助 CrossOver 等逐个尝试，成功率很低。"
+
+        let signatures: [Signature] = [
+            Signature(name: "ACE 反作弊专家（腾讯）", severity: .blocking, advice: kernelAdvice,
+                      contains: ["anticheatexpert", "sguard", "tenprotect", "tensafe", "tprotect"],
+                      exact: ["ace-base.sys"], prefixes: ["ace-drv", "ace-base"]),
+            Signature(name: "Riot Vanguard", severity: .blocking, advice: kernelAdvice,
+                      exact: ["vgc.exe", "vgk.sys", "vgtray.exe"]),
+            Signature(name: "XIGNCODE3", severity: .blocking, advice: kernelAdvice,
+                      contains: ["xigncode", "xhunter"], exact: ["x3.xem", "xmag.xem"]),
+            Signature(name: "nProtect GameGuard", severity: .blocking, advice: kernelAdvice,
+                      contains: ["gameguard"], exact: ["npggnt.des", "gamemon.des"], prefixes: ["npgg"]),
+            Signature(name: "mhyprot（米哈游 / HoYoverse）", severity: .blocking, advice: kernelAdvice,
+                      contains: ["mhyprot", "hoyoprotect"]),
+            Signature(name: "Easy Anti-Cheat (EAC)", severity: .unlikely, advice: protonAdvice,
+                      contains: ["easyanticheat"]),
+            Signature(name: "BattlEye", severity: .unlikely, advice: protonAdvice,
+                      contains: ["battleye", "bedaisy", "beservice"], prefixes: ["beclient"])
+        ]
+
+        var hits: [AntiCheatHit] = []
+        for sig in signatures {
+            let evidence = names.filter { name in
+                sig.exact.contains(name)
+                    || sig.contains.contains(where: { name.contains($0) })
+                    || sig.prefixes.contains(where: { name.hasPrefix($0) })
+            }
+            if !evidence.isEmpty {
+                let trimmed = Array(evidence.sorted().prefix(4))
+                hits.append(AntiCheatHit(name: sig.name, severity: sig.severity, evidence: trimmed, advice: sig.advice))
+            }
+        }
+
+        return hits.sorted { lhs, rhs in
+            (lhs.severity == .blocking ? 0 : 1) < (rhs.severity == .blocking ? 0 : 1)
+        }
     }
 
     private static func scoreCandidate(exeURL: URL, folderName: String) -> ScanCandidate {

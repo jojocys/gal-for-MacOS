@@ -25,24 +25,31 @@ fi
 if [[ -n "$SOURCE_PNG" ]]; then
   swift - "$SOURCE_PNG" "$ROUNDED_SRC" <<'SWIFT'
 import AppKit
+import SwiftUI
 import Foundation
 
 let args = CommandLine.arguments
 guard args.count >= 3 else { exit(1) }
 let input = URL(fileURLWithPath: args[1])
 let output = URL(fileURLWithPath: args[2])
-let baseCorner: CGFloat = 60.0
 
 guard let image = NSImage(contentsOf: input) else {
     fputs("Failed to load input image\n", stderr)
     exit(2)
 }
 
-let size = NSSize(width: 1024, height: 1024)
+// Apple macOS 图标网格：1024 画布，主体 824×824 居中，连续曲率圆角 185.4
+let canvas: CGFloat = 1024
+let bodySize: CGFloat = 824
+let radius: CGFloat = 185.4
+let margin = (canvas - bodySize) / 2.0
+let size = NSSize(width: canvas, height: canvas)
+let bodyRect = NSRect(x: margin, y: margin, width: bodySize, height: bodySize)
+
 let rep = NSBitmapImageRep(
     bitmapDataPlanes: nil,
-    pixelsWide: Int(size.width),
-    pixelsHigh: Int(size.height),
+    pixelsWide: Int(canvas),
+    pixelsHigh: Int(canvas),
     bitsPerSample: 8,
     samplesPerPixel: 4,
     hasAlpha: true,
@@ -52,15 +59,21 @@ let rep = NSBitmapImageRep(
     bitsPerPixel: 0
 )!
 rep.size = size
-NSGraphicsContext.saveGraphicsState()
-NSGraphicsContext.current = NSGraphicsContext(bitmapImageRep: rep)
 
-let rect = NSRect(origin: .zero, size: size)
+NSGraphicsContext.saveGraphicsState()
+let nsctx = NSGraphicsContext(bitmapImageRep: rep)!
+NSGraphicsContext.current = nsctx
+let cg = nsctx.cgContext
+
 NSColor.clear.setFill()
-rect.fill()
-let clip = NSBezierPath(roundedRect: rect, xRadius: baseCorner, yRadius: baseCorner)
-clip.addClip()
-image.draw(in: rect, from: .zero, operation: .copy, fraction: 1.0)
+NSRect(origin: .zero, size: size).fill()
+
+// 连续曲率 squircle，与系统应用图标一致
+let squircle = RoundedRectangle(cornerRadius: radius, style: .continuous).path(in: bodyRect)
+cg.addPath(squircle.cgPath)
+cg.clip()
+
+image.draw(in: bodyRect, from: .zero, operation: .copy, fraction: 1.0)
 
 NSGraphicsContext.restoreGraphicsState()
 

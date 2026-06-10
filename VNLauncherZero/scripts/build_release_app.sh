@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-APP_NAME="GAL FOR MacOS"
+APP_NAME="Shiori"
+APP_DISPLAY_NAME="栞 Shiori"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_ZIP="$DIST_DIR/$APP_NAME.app.zip"
 APP_ZIP_SHA="$APP_ZIP.sha256.txt"
@@ -111,13 +112,13 @@ cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <plist version="1.0">
 <dict>
   <key>CFBundleName</key>
-  <string>$APP_NAME</string>
+  <string>$APP_DISPLAY_NAME</string>
   <key>CFBundleDisplayName</key>
-  <string>$APP_NAME</string>
+  <string>$APP_DISPLAY_NAME</string>
   <key>CFBundleExecutable</key>
   <string>$EXECUTABLE_NAME</string>
   <key>CFBundleIdentifier</key>
-  <string>local.gaoxiaoli.galformacos</string>
+  <string>local.gaoxiaoli.shiori</string>
   <key>CFBundleVersion</key>
   <string>1</string>
   <key>CFBundleShortVersionString</key>

@@ -3,7 +3,8 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
-APP_NAME="GAL FOR MacOS"
+APP_NAME="Shiori"
+APP_DISPLAY_NAME="栞 Shiori"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 DMG_PATH="$DIST_DIR/$APP_NAME.dmg"
 DMG_SHA_PATH="$DMG_PATH.sha256.txt"
@@ -59,7 +60,7 @@ rm -f "$DMG_PATH"
 rm -f "$DMG_SHA_PATH"
 
 echo "[4/5] Creating DMG..."
-hdiutil create -volname "$APP_NAME" -srcfolder "$STAGE_DIR" -ov -format UDZO "$DMG_PATH" >/dev/null
+hdiutil create -volname "$APP_DISPLAY_NAME" -srcfolder "$STAGE_DIR" -ov -format UDZO "$DMG_PATH" >/dev/null
 rm -rf "$STAGE_DIR"
 
 echo "[5/5] Writing sha256..."

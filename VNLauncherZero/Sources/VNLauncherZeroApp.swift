@@ -5,7 +5,7 @@ struct VNLauncherZeroApp: App {
     @StateObject private var store = AppStore()
 
     var body: some Scene {
-        WindowGroup("GAL FOR MacOS") {
+        WindowGroup(AppInfo.name) {
             RootView(store: store)
         }
         .windowStyle(.titleBar)

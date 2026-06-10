@@ -74,6 +74,16 @@ struct RootView: View {
         AppearancePreference(rawValue: appearanceRaw) ?? .system
     }
 
+    private var updateHelp: String {
+        switch store.updateState.phase {
+        case .available: return "有新版本 \(store.updateState.latestVersion)，点击下载"
+        case .checking: return "正在检查更新…"
+        case .upToDate: return "已是最新版本"
+        case .failed: return "检查更新失败，点击重试"
+        case .idle: return "检查更新"
+        }
+    }
+
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -91,6 +101,7 @@ struct RootView: View {
             Text("只删除配置记录，不删除游戏文件。")
         }
         .onAppear(perform: syncInitialSelection)
+        .task { await store.checkForUpdates() }
         .onChange(of: store.selectedGameID) { newID in
             // 列表变化（如删除）后保持侧栏与 store 同步，但不打断 Steam 视图。
             if case .game = sidebarSelection {
@@ -121,6 +132,23 @@ struct RootView: View {
             }
             .help("刷新")
 
+            Button {
+                if store.updateState.isAvailable {
+                    store.openReleasesPage()
+                } else {
+                    Task { await store.checkForUpdates(userInitiated: true) }
+                }
+            } label: {
+                if store.updateState.isAvailable {
+                    Image(systemName: "arrow.down.circle.fill")
+                        .foregroundStyle(.tint)
+                } else {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                }
+            }
+            .help(updateHelp)
+            .disabled(store.updateState.phase == .checking)
+
             Menu {
                 Picker("外观", selection: $appearanceRaw) {
                     ForEach(AppearancePreference.allCases) { pref in
@@ -140,6 +168,10 @@ struct RootView: View {
     private var sidebar: some View {
         VStack(spacing: 0) {
             brandHeader
+
+            if store.updateState.isAvailable {
+                updateBanner
+            }
 
             List(selection: sidebarBinding) {
                 Section {
@@ -165,12 +197,14 @@ struct RootView: View {
             Image(systemName: "gamecontroller.fill")
                 .font(.title3)
                 .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 1) {
-                Text("GAL for macOS")
+            VStack(alignment: .leading, spacing: 2) {
+                Text(AppInfo.name)
                     .font(.headline)
-                Text("选择 · 检测 · 启动")
-                    .font(.caption)
+                Text(AppInfo.subtitle)
+                    .font(.caption2)
                     .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             Spacer()
         }
@@ -230,7 +264,7 @@ struct RootView: View {
             .controlSize(.large)
 
             HStack {
-                Text("共 \(store.games.count) 个配置")
+                Text("共 \(store.games.count) 个配置 · v\(AppInfo.version)")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -243,6 +277,39 @@ struct RootView: View {
             }
         }
         .padding(12)
+    }
+
+    private var updateBanner: some View {
+        Button {
+            store.openReleasesPage()
+        } label: {
+            HStack(spacing: 9) {
+                Image(systemName: "arrow.down.circle.fill")
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("有新版本 \(store.updateState.latestVersion)")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.primary)
+                    Text("点击前往下载")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(Color.accentColor.opacity(0.14))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .stroke(Color.accentColor.opacity(0.35), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 12)
+        .padding(.bottom, 8)
     }
 
     // MARK: Detail switch
@@ -389,6 +456,10 @@ struct RootView: View {
 
     private var setupContent: some View {
         VStack(spacing: 18) {
+            if let scan = store.scanResult, !scan.antiCheats.isEmpty {
+                antiCheatBanner(scan.antiCheats)
+            }
+
             card {
                 VStack(alignment: .leading, spacing: 14) {
                     sectionTitle("选择游戏", subtitle: "选择整个游戏目录，自动扫描并推荐主程序。")
@@ -503,6 +574,61 @@ struct RootView: View {
         .background(
             RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(Color.primary.opacity(0.04))
+        )
+    }
+
+    private func antiCheatBanner(_ hits: [AntiCheatHit]) -> some View {
+        let blocking = hits.contains { $0.severity == .blocking }
+        let accent: Color = blocking ? .red : .orange
+        return VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 10) {
+                Image(systemName: "exclamationmark.octagon.fill")
+                    .foregroundStyle(accent)
+                Text(blocking ? "检测到内核级反作弊 · macOS 无法运行" : "检测到反作弊 · macOS 上几乎无法运行")
+                    .font(.headline)
+                Spacer()
+            }
+
+            ForEach(hits) { hit in
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 8) {
+                        Text(hit.name)
+                            .font(.callout.weight(.semibold))
+                        Text(hit.severity.headline)
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill((hit.severity == .blocking ? Color.red : Color.orange).opacity(0.18)))
+                            .foregroundStyle(hit.severity == .blocking ? Color.red : Color.orange)
+                    }
+                    Text(hit.advice)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !hit.evidence.isEmpty {
+                        Text("特征文件：" + hit.evidence.joined(separator: "、"))
+                            .font(.system(.caption2, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(10)
+                .background(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .fill(Color.primary.opacity(0.04))
+                )
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(accent.opacity(0.10))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .stroke(accent.opacity(0.5), lineWidth: 1)
         )
     }
 

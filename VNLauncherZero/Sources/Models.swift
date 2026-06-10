@@ -115,13 +115,37 @@ struct ScanCandidate: Identifiable, Hashable {
     let reason: String
 }
 
+enum AntiCheatSeverity: Hashable {
+    /// 内核级反作弊，macOS / Wine 上无任何可行路径。
+    case blocking
+    /// 内核级但存在 Linux/Proton 适配开关，macOS 上仍极难成功。
+    case unlikely
+
+    var headline: String {
+        switch self {
+        case .blocking: return "macOS 无法运行"
+        case .unlikely: return "macOS 上几乎无法运行"
+        }
+    }
+}
+
+struct AntiCheatHit: Identifiable, Hashable {
+    let id = UUID()
+    let name: String
+    let severity: AntiCheatSeverity
+    let evidence: [String]
+    let advice: String
+}
+
 struct ScanResult {
     let folderURL: URL
     let engineHint: String
     let xp3Count: Int
     let exeCandidates: [ScanCandidate]
+    let antiCheats: [AntiCheatHit]
 
     var recommendedEXE: URL? { exeCandidates.first?.exeURL }
+    var hasBlockingAntiCheat: Bool { antiCheats.contains { $0.severity == .blocking } }
 }
 
 struct RuntimeCheckItem: Identifiable {
