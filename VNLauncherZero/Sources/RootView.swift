@@ -1,9 +1,78 @@
 import AppKit
 import SwiftUI
 
+// MARK: - UI model helpers
+
+/// 外观偏好：跟随系统 / 浅色 / 深色。持久化于 @AppStorage。
+enum AppearancePreference: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .system: return "跟随系统"
+        case .light: return "浅色"
+        case .dark: return "深色"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .system: return "circle.lefthalf.filled"
+        case .light: return "sun.max"
+        case .dark: return "moon"
+        }
+    }
+
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
+    }
+}
+
+/// 侧栏顶层入口：Wine Steam 与「我的游戏」同级。
+enum SidebarItem: Hashable {
+    case steam
+    case game(UUID)
+}
+
+/// 游戏详情内的次级标签。运行环境通常只用一次，作为次级页签。
+enum GameSection: String, CaseIterable, Identifiable {
+    case setup    // P1 选择游戏（频繁）
+    case runtime  // P2 运行环境（一次性）
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .setup: return "游戏设置"
+        case .runtime: return "运行环境"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .setup: return "folder"
+        case .runtime: return "gearshape.2"
+        }
+    }
+}
+
 struct RootView: View {
     @ObservedObject var store: AppStore
+
+    @AppStorage("ui.appearance") private var appearanceRaw = AppearancePreference.system.rawValue
+    @State private var sidebarSelection: SidebarItem?
+    @State private var gameSection: GameSection = .setup
     @State private var showDeleteConfirm = false
+
+    private var appearance: AppearancePreference {
+        AppearancePreference(rawValue: appearanceRaw) ?? .system
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -12,127 +81,153 @@ struct RootView: View {
             detail
         }
         .navigationSplitViewStyle(.balanced)
-        .frame(minWidth: 1200, minHeight: 760)
-        .toolbar {
-            ToolbarItemGroup(placement: .primaryAction) {
-                Button {
-                    store.addEmptyGame()
-                } label: {
-                    Image(systemName: "plus")
-                }
-                .help("新建配置")
-
-                Button {
-                    store.chooseEXEManually()
-                } label: {
-                    Image(systemName: "doc.badge.plus")
-                }
-                .help("手动选择 EXE")
-
-                Button {
-                    store.startGame()
-                } label: {
-                    Image(systemName: "play.fill")
-                }
-                .help("启动")
-
-                Button(role: .destructive) {
-                    showDeleteConfirm = true
-                } label: {
-                    Image(systemName: "trash")
-                }
-                .help("删除当前配置")
-                .disabled(store.selectedGame == nil)
-            }
-        }
+        .frame(minWidth: 1120, minHeight: 720)
+        .preferredColorScheme(appearance.colorScheme)
+        .toolbar { toolbarContent }
         .confirmationDialog("删除当前配置？", isPresented: $showDeleteConfirm, titleVisibility: .visible) {
             Button("删除", role: .destructive) { store.removeSelectedGame() }
             Button("取消", role: .cancel) {}
         } message: {
             Text("只删除配置记录，不删除游戏文件。")
         }
+        .onAppear(perform: syncInitialSelection)
+        .onChange(of: store.selectedGameID) { newID in
+            // 列表变化（如删除）后保持侧栏与 store 同步，但不打断 Steam 视图。
+            if case .game = sidebarSelection {
+                sidebarSelection = newID.map(SidebarItem.game)
+            } else if sidebarSelection == nil {
+                sidebarSelection = newID.map(SidebarItem.game)
+            }
+        }
     }
+
+    // MARK: Toolbar
+
+    @ToolbarContentBuilder
+    private var toolbarContent: some ToolbarContent {
+        ToolbarItemGroup(placement: .primaryAction) {
+            Button {
+                store.addEmptyGame()
+            } label: {
+                Image(systemName: "plus")
+            }
+            .help("新建配置")
+
+            Button {
+                store.load()
+                store.refreshRuntimeStatus()
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .help("刷新")
+
+            Menu {
+                Picker("外观", selection: $appearanceRaw) {
+                    ForEach(AppearancePreference.allCases) { pref in
+                        Label(pref.title, systemImage: pref.symbol).tag(pref.rawValue)
+                    }
+                }
+                .pickerStyle(.inline)
+            } label: {
+                Image(systemName: appearance.symbol)
+            }
+            .help("浅色 / 深色主题")
+        }
+    }
+
+    // MARK: Sidebar
 
     private var sidebar: some View {
         VStack(spacing: 0) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text("已保存游戏")
-                    .font(.title3.bold())
-                    .foregroundStyle(.white)
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 20)
-            .padding(.top, 22)
-            .padding(.bottom, 14)
+            brandHeader
 
-            List(selection: selectionBinding) {
-                ForEach(store.games) { game in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(game.name)
-                            .font(.headline)
-                            .lineLimit(2)
-                        Text(game.displaySubtitle)
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
-                        Text(game.engineHint)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(1)
+            List(selection: sidebarBinding) {
+                Section {
+                    steamRow.tag(SidebarItem.steam)
+                }
+
+                Section("我的游戏") {
+                    ForEach(store.games) { game in
+                        gameRow(game).tag(SidebarItem.game(game.id))
                     }
-                    .padding(.vertical, 5)
-                    .tag(game.id)
                 }
             }
             .listStyle(.sidebar)
 
-            VStack(spacing: 10) {
-                Button {
-                    store.addEmptyGame()
-                } label: {
-                    Label("添加新配置", systemImage: "plus")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(Color.green.opacity(0.85))
+            Divider()
+            sidebarFooter
+        }
+        .frame(minWidth: 264)
+    }
 
-                Button {
-                    store.chooseAndScanGameFolder()
-                } label: {
-                    Text("更改游戏文件夹")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-
-                Button {
-                    store.openSelectedGameFolder()
-                } label: {
-                    Text("打开游戏文件夹")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-
-                Button(role: .destructive) {
-                    showDeleteConfirm = true
-                } label: {
-                    Text("删除当前配置")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(store.selectedGame == nil)
+    private var brandHeader: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "gamecontroller.fill")
+                .font(.title3)
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 1) {
+                Text("GAL for macOS")
+                    .font(.headline)
+                Text("选择 · 检测 · 启动")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
-            .frame(maxWidth: .infinity)
-            .padding(14)
-            .background(
-                RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .fill(Color.white.opacity(0.03))
-            )
-            .padding(.horizontal, 10)
-            .padding(.top, 6)
+            Spacer()
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 10)
+    }
+
+    private var steamRow: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "s.circle.fill")
+                .font(.title2)
+                .foregroundStyle(.tint)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Wine Steam")
+                    .font(.headline)
+                Text("独立客户端入口")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func gameRow(_ game: GameEntry) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: "puzzlepiece.fill")
+                .foregroundStyle(.secondary)
+                .frame(width: 18)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(game.name)
+                    .font(.body.weight(.medium))
+                    .lineLimit(1)
+                Text(game.displaySubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 4)
+            Text(game.engineHint)
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+        }
+        .padding(.vertical, 3)
+    }
+
+    private var sidebarFooter: some View {
+        VStack(spacing: 8) {
+            Button {
+                store.addEmptyGame()
+            } label: {
+                Label("新建配置", systemImage: "plus")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
 
             HStack {
                 Text("共 \(store.games.count) 个配置")
@@ -146,460 +241,541 @@ struct RootView: View {
                 .buttonStyle(.borderless)
                 .font(.caption)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
-
-            VStack(alignment: .leading, spacing: 8) {
-                Text("快捷入口")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.white.opacity(0.8))
-                Text("直接打开 Wine Steam 客户端，不依赖当前游戏配置。")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.62))
-                Button {
-                    store.launchWineSteamEntry()
-                } label: {
-                    Label("启动 Wine Steam 客户端", systemImage: "steam")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(.blue)
-
-                Button {
-                    store.downloadAndOpenWineSteamInstaller()
-                } label: {
-                    Label("下载 Wine Steam", systemImage: "arrow.down.circle")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(store.isDownloadingInstaller)
-
-                Button(role: .destructive) {
-                    store.stopWineSteamProcesses()
-                } label: {
-                    Label("关闭 Wine Steam 进程", systemImage: "power")
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-
-                if !store.downloadStatusText.isEmpty {
-                    Text(store.downloadStatusText)
-                        .font(.caption2)
-                        .foregroundStyle(.white.opacity(0.62))
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            .padding(12)
-            .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.04)))
-            .padding(.horizontal, 10)
-            .padding(.bottom, 12)
         }
-        .frame(minWidth: 360)
-        .background(
-            LinearGradient(
-                colors: [Color(red: 0.03, green: 0.08, blue: 0.2), Color.black],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-        )
+        .padding(12)
     }
 
+    // MARK: Detail switch
+
+    @ViewBuilder
     private var detail: some View {
-        ZStack {
-            LinearGradient(
-                colors: [Color(red: 0.08, green: 0.11, blue: 0.17), Color.black],
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
+        switch sidebarSelection {
+        case .steam:
+            steamDetail
+        case .game:
+            gameDetail
+        case .none:
+            emptyDetail
+        }
+    }
+
+    private var emptyDetail: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "gamecontroller")
+                .font(.system(size: 44))
+                .foregroundStyle(.secondary)
+            Text("从左侧选择一个游戏，或打开 Wine Steam")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    // MARK: Game detail
+
+    private var gameDetail: some View {
+        VStack(spacing: 0) {
+            gameHeader
+            Divider()
+
+            Picker("", selection: $gameSection) {
+                ForEach(GameSection.allCases) { section in
+                    Label(section.title, systemImage: section.symbol).tag(section)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .padding(.horizontal, 24)
+            .padding(.vertical, 12)
 
             ScrollView {
-                VStack(spacing: 22) {
-                    heroCard
-                    p1Card
-                    p2Card
-                    p3Card
-                }
-                .padding(20)
-            }
-        }
-    }
-
-    private var heroCard: some View {
-        card {
-            HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("GAL FOR MacOS")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
-                    Text("选择游戏文件夹 -> 检查运行环境 -> 一键启动")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(.white.opacity(0.85))
-
-                    HStack(spacing: 14) {
-                        stepPill("P1", "选择游戏")
-                        stepPill("P2", "运行环境")
-                        stepPill("P3", "启动游戏")
-                    }
-                    .padding(.top, 8)
-                }
-                Spacer(minLength: 12)
-                Button {
-                    store.openRepairGuide()
-                } label: {
-                    Label("一键修复引导", systemImage: "wand.and.stars")
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.orange.opacity(0.9))
-            }
-        }
-    }
-
-    private func stepPill(_ left: String, _ right: String) -> some View {
-        HStack(spacing: 10) {
-            Text(left)
-                .font(.headline.monospaced())
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(Capsule().fill(Color.white.opacity(0.08)))
-            Text(right)
-                .font(.headline)
-                .foregroundStyle(.white.opacity(0.95))
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .background(
-            Capsule().fill(Color.white.opacity(0.06))
-        )
-        .overlay(
-            Capsule().stroke(Color.white.opacity(0.05), lineWidth: 1)
-        )
-    }
-
-    private var p1Card: some View {
-        card {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .center) {
-                    Text("1")
-                        .font(.caption.bold())
-                        .foregroundStyle(.black)
-                        .padding(6)
-                        .background(Circle().fill(Color.orange))
-                    Text("P1 选择游戏文件夹（自动识别主程序）")
-                        .font(.title2.bold())
-                        .foregroundStyle(.white)
-                    Spacer()
-                    if let scan = store.scanResult {
-                        VStack(alignment: .trailing, spacing: 6) {
-                            statBadge("识别引擎", scan.engineHint)
-                            statBadge("XP3 数量", "\(scan.xp3Count)")
-                            statBadge("候选 EXE", "\(scan.exeCandidates.count)")
-                        }
-                    } else {
-                        VStack(alignment: .trailing, spacing: 6) {
-                            statBadge("识别引擎", "未识别")
-                            statBadge("XP3 数量", "-")
-                            statBadge("候选 EXE", "-")
-                        }
+                VStack(spacing: 18) {
+                    switch gameSection {
+                    case .setup:   setupContent
+                    case .runtime: runtimeContent
                     }
                 }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
 
-                Text("推荐做法：直接选择整个游戏目录，启动器会自动扫描 .exe 并优先推荐真正的主程序。")
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.85))
+            statusBar
+        }
+    }
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("配置名称（可自定义）")
-                        .font(.headline)
-                        .foregroundStyle(.white.opacity(0.7))
-                    TextField(
-                        "例如：Senren Banka",
-                        text: Binding(
-                            get: { store.selectedGame?.name ?? "" },
-                            set: { store.renameSelectedGame($0) }
-                        )
-                    )
-                    .textFieldStyle(.roundedBorder)
-                }
+    /// 头部：常驻的「启动」重点区。开始游戏为最大主操作。
+    private var gameHeader: some View {
+        let game = store.selectedGame
+        return HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(game?.name ?? "未选择")
+                    .font(.system(size: 28, weight: .bold))
+                    .lineLimit(1)
 
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("当前目录")
-                        .font(.headline)
-                        .foregroundStyle(.white.opacity(0.7))
-                    Text(store.selectedGame?.gameFolderPath.isEmpty == false ? (store.selectedGame?.gameFolderPath ?? "") : "尚未选择")
-                        .font(.system(.body, design: .monospaced))
-                        .foregroundStyle(.white)
-                        .textSelection(.enabled)
-                        .lineLimit(2)
+                HStack(spacing: 8) {
+                    enginePill(game?.engineHint ?? "未识别")
+                    Text(exeDisplay(game))
+                        .font(.system(.caption, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
 
                 HStack(spacing: 10) {
-                    Button {
-                        store.chooseAndScanGameFolder()
-                    } label: {
-                        Label("选择游戏文件夹", systemImage: "folder")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.green.opacity(0.8))
-
-                    Button {
-                        store.rescanCurrentFolder()
-                    } label: {
-                        Label("重新扫描", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-
-                    Button {
-                        store.chooseEXEManually()
-                    } label: {
-                        Label("手动选择 EXE", systemImage: "doc")
-                    }
-                    .buttonStyle(.bordered)
-                }
-
-                if let scan = store.scanResult {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("推荐主程序候选")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                        ForEach(Array(scan.exeCandidates.prefix(5))) { candidate in
-                            HStack(alignment: .top, spacing: 10) {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(candidate.exeURL.lastPathComponent)
-                                        .font(.headline)
-                                        .foregroundStyle(.white)
-                                    Text(candidate.reason)
-                                        .font(.caption)
-                                        .foregroundStyle(.white.opacity(0.65))
-                                    Text(candidate.exeURL.path)
-                                        .font(.system(.caption, design: .monospaced))
-                                        .foregroundStyle(.white.opacity(0.55))
-                                        .lineLimit(1)
-                                }
-                                Spacer()
-                                Text("\(candidate.score)")
-                                    .font(.system(.body, design: .monospaced).bold())
-                                    .foregroundStyle(.white.opacity(0.8))
-                                Button("选用") { store.applyRecommendedCandidate(candidate) }
-                                    .buttonStyle(.bordered)
-                            }
-                            .padding(10)
-                            .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+                    Text("语言")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    Picker("启动语言", selection: launchLanguageBinding) {
+                        ForEach(LaunchLanguageMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
                         }
                     }
+                    .pickerStyle(.segmented)
+                    .labelsHidden()
+                    .frame(width: 220)
+                    .disabled(game == nil)
                 }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    pathRow(title: "推荐 EXE", value: store.selectedGame?.exePath ?? "") {
-                        Button("选择 EXE") { store.chooseEXEManually() }.buttonStyle(.bordered)
-                    }
-                    pathRow(title: "Wine Prefix", value: store.selectedGame?.prefixDir ?? "") {
-                        Button("选择 Prefix") { store.choosePrefixFolder() }.buttonStyle(.bordered)
-                    }
-                }
-
-                HStack {
-                    Button {
-                        store.saveCurrentFromP1()
-                    } label: {
-                        Label("保存到游戏列表（进入 P2）", systemImage: "square.and.arrow.down")
-                    }
-                    .buttonStyle(.borderedProminent)
-                    .tint(Color.blue.opacity(0.75))
-
-                    Spacer()
-                }
+                .padding(.top, 2)
             }
-        }
-    }
 
-    private var p2Card: some View {
-        card {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("2")
-                        .font(.caption.bold())
-                        .foregroundStyle(.black)
-                        .padding(6)
-                        .background(Circle().fill(Color.orange))
-                    Text("P2 运行环境（无需命令行，图形化引导）")
-                        .font(.title2.bold())
-                        .foregroundStyle(.white)
-                    Spacer()
-                    Button {
-                        store.refreshRuntimeStatus(userInitiated: true)
-                    } label: {
-                        Label("重新检测", systemImage: "arrow.clockwise")
-                    }
-                    .buttonStyle(.bordered)
-                }
+            Spacer(minLength: 12)
 
-                Text("这里会检测内置 Wine / Rosetta / XQuartz / Gatekeeper。已内置 Wine 的打包版无需再单独下载 Wine。")
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.85))
-
-                ForEach(store.runtimeReport.items) { item in
-                    HStack(alignment: .top, spacing: 12) {
-                        Circle()
-                            .fill(color(for: item.state))
-                            .frame(width: 14, height: 14)
-                            .padding(.top, 4)
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text(item.title)
-                                .font(.headline)
-                                .foregroundStyle(.white)
-                            Text(item.detail)
-                                .font(.subheadline)
-                                .foregroundStyle(.white.opacity(0.72))
-                        }
-                        Spacer()
-                        Text(item.state.label)
-                            .font(.headline)
-                            .foregroundStyle(color(for: item.state))
-                    }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
-                }
-
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack(spacing: 10) {
-                        Button("一键安装 XQuartz（内置）") { store.installEmbeddedXQuartz() }
-                            .buttonStyle(.borderedProminent)
-                            .tint(Color.orange.opacity(0.85))
-                        Button("打开“隐私与安全性”") { store.openPrivacySettings() }.buttonStyle(.bordered)
-                    }
-                }
-            }
-        }
-    }
-
-    private var p3Card: some View {
-        card {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text("3")
-                        .font(.caption.bold())
-                        .foregroundStyle(.black)
-                        .padding(6)
-                        .background(Circle().fill(Color.orange))
-                    Text("P3 启动游戏")
-                        .font(.title2.bold())
-                        .foregroundStyle(.white)
-                    Spacer()
-                }
-
-                Text("确认 P1 已识别主程序、P2 已安装 Wine 后，点击下方按钮开始游戏。首次启动可能会稍慢。")
-                    .font(.headline)
-                    .foregroundStyle(.white.opacity(0.85))
-
-                if let game = store.selectedGame {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("当前配置：\(game.name)")
-                            .font(.headline)
-                            .foregroundStyle(.white)
-                        Text("EXE：\(game.exePath.isEmpty ? "尚未选择" : game.exePath)")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.white.opacity(0.7))
-                            .lineLimit(2)
-                    }
-                    .padding(12)
-                    .background(RoundedRectangle(cornerRadius: 12).fill(Color.white.opacity(0.03)))
-
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("启动语言模式")
-                            .font(.headline)
-                            .foregroundStyle(.white.opacity(0.85))
-                        Picker(
-                            "启动语言模式",
-                            selection: Binding(
-                                get: { store.selectedGame?.launchLanguageMode ?? .auto },
-                                set: { store.setSelectedLaunchLanguage($0) }
-                            )
-                        ) {
-                            ForEach(LaunchLanguageMode.allCases) { mode in
-                                Text(mode.title).tag(mode)
-                            }
-                        }
-                        .pickerStyle(.segmented)
-                    }
-                }
-
+            VStack(alignment: .trailing, spacing: 10) {
                 Button {
                     store.startGame()
                 } label: {
                     Label("开始游戏", systemImage: "play.fill")
-                        .frame(maxWidth: .infinity)
+                        .font(.title3.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(Color.blue.opacity(0.9))
+                .keyboardShortcut(.return, modifiers: [.command])
+                .disabled(game == nil)
 
-                HStack(spacing: 10) {
-                    Button("打开日志") { store.openLastLog() }
-                        .buttonStyle(.bordered)
-                        .disabled(store.lastLogPath.isEmpty)
-                    Button("在 Finder 中打开游戏目录") { store.openSelectedGameFolder() }
-                        .buttonStyle(.bordered)
+                HStack(spacing: 8) {
+                    Button {
+                        store.openLastLog()
+                    } label: {
+                        Label("日志", systemImage: "doc.text")
+                    }
+                    .controlSize(.small)
+                    .disabled(store.lastLogPath.isEmpty)
+
+                    Button {
+                        store.openSelectedGameFolder()
+                    } label: {
+                        Label("目录", systemImage: "folder")
+                    }
+                    .controlSize(.small)
+                    .disabled(game == nil)
+
+                    Button(role: .destructive) {
+                        showDeleteConfirm = true
+                    } label: {
+                        Label("删除", systemImage: "trash")
+                    }
+                    .controlSize(.small)
+                    .disabled(game == nil)
+                }
+            }
+        }
+        .padding(.horizontal, 24)
+        .padding(.top, 20)
+        .padding(.bottom, 16)
+    }
+
+    // MARK: P1 设置内容
+
+    private var setupContent: some View {
+        VStack(spacing: 18) {
+            card {
+                VStack(alignment: .leading, spacing: 14) {
+                    sectionTitle("选择游戏", subtitle: "选择整个游戏目录，自动扫描并推荐主程序。")
+
+                    // 主操作：选择文件夹（大）
+                    Button {
+                        store.chooseAndScanGameFolder()
+                    } label: {
+                        Label("选择游戏文件夹", systemImage: "folder.badge.plus")
+                            .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.large)
+                    .keyboardShortcut("o", modifiers: [.command])
+
+                    // 次级操作（中）
+                    HStack(spacing: 10) {
+                        Button {
+                            store.rescanCurrentFolder()
+                        } label: {
+                            Label("重新扫描", systemImage: "arrow.clockwise")
+                        }
+                        Button {
+                            store.chooseEXEManually()
+                        } label: {
+                            Label("手动选择 EXE", systemImage: "doc")
+                        }
+                    }
+
+                    labeledField("配置名称") {
+                        TextField("例如：Senren Banka", text: nameBinding)
+                            .textFieldStyle(.roundedBorder)
+                    }
+
+                    labeledField("当前目录") {
+                        Text(store.selectedGame?.gameFolderPath.isEmpty == false
+                             ? (store.selectedGame?.gameFolderPath ?? "")
+                             : "尚未选择")
+                            .font(.system(.callout, design: .monospaced))
+                            .foregroundStyle(.primary)
+                            .textSelection(.enabled)
+                            .lineLimit(2)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+
+            if let scan = store.scanResult {
+                card {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack {
+                            sectionTitle("扫描结果", subtitle: nil)
+                            Spacer()
+                            statBadge("引擎", scan.engineHint)
+                            statBadge("XP3", "\(scan.xp3Count)")
+                            statBadge("候选", "\(scan.exeCandidates.count)")
+                        }
+
+                        ForEach(Array(scan.exeCandidates.prefix(5))) { candidate in
+                            candidateRow(candidate)
+                        }
+                    }
+                }
+            }
+
+            card {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionTitle("路径", subtitle: nil)
+                    pathRow(title: "推荐 EXE", value: store.selectedGame?.exePath ?? "") {
+                        Button("选择") { store.chooseEXEManually() }
+                            .controlSize(.small)
+                    }
+                    pathRow(title: "Wine Prefix", value: store.selectedGame?.prefixDir ?? "") {
+                        Button("选择") { store.choosePrefixFolder() }
+                            .controlSize(.small)
+                    }
+
+                    Button {
+                        store.saveCurrentFromP1()
+                    } label: {
+                        Label("保存到游戏列表", systemImage: "square.and.arrow.down")
+                    }
+                    .buttonStyle(.bordered)
+                    .padding(.top, 2)
                 }
             }
         }
     }
 
+    private func candidateRow(_ candidate: ScanCandidate) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(candidate.exeURL.lastPathComponent)
+                    .font(.body.weight(.medium))
+                Text(candidate.reason)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text(candidate.exeURL.path)
+                    .font(.system(.caption2, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 8)
+            Text("\(candidate.score)")
+                .font(.system(.callout, design: .monospaced).weight(.semibold))
+                .foregroundStyle(.secondary)
+            Button("选用") { store.applyRecommendedCandidate(candidate) }
+                .controlSize(.small)
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+
+    // MARK: P2 运行环境内容
+
+    private var runtimeContent: some View {
+        VStack(spacing: 18) {
+            card {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        sectionTitle("运行环境检测", subtitle: "检测内置 Wine / Rosetta / XQuartz / Gatekeeper。通常只需一次。")
+                        Spacer()
+                        Button {
+                            store.refreshRuntimeStatus(userInitiated: true)
+                        } label: {
+                            Label("重新检测", systemImage: "arrow.clockwise")
+                        }
+                        .controlSize(.small)
+                    }
+
+                    ForEach(store.runtimeReport.items) { item in
+                        runtimeRow(item)
+                    }
+                }
+            }
+
+            card {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionTitle("修复与设置", subtitle: nil)
+                    HStack(spacing: 10) {
+                        Button {
+                            store.installEmbeddedXQuartz()
+                        } label: {
+                            Label("安装内置 XQuartz", systemImage: "arrow.down.app")
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            store.openPrivacySettings()
+                        } label: {
+                            Label("隐私与安全性", systemImage: "lock.shield")
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button {
+                            store.openRepairGuide()
+                        } label: {
+                            Label("一键修复引导", systemImage: "wand.and.stars")
+                        }
+                        .buttonStyle(.bordered)
+                    }
+                }
+            }
+        }
+    }
+
+    private func runtimeRow(_ item: RuntimeCheckItem) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(color(for: item.state))
+                .frame(width: 12, height: 12)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(item.title)
+                    .font(.body.weight(.medium))
+                Text(item.detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Text(item.state.label)
+                .font(.callout.weight(.semibold))
+                .foregroundStyle(color(for: item.state))
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+
+    // MARK: Steam detail（与「我的游戏」同级的主入口）
+
+    private var steamDetail: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Wine Steam")
+                        .font(.system(size: 28, weight: .bold))
+                    Text("直接打开 Wine 版 Steam 客户端，不依赖当前游戏配置。")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Button {
+                    store.launchWineSteamEntry()
+                } label: {
+                    Label("启动 Steam 客户端", systemImage: "play.fill")
+                        .font(.title3.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+
+            Divider()
+
+            ScrollView {
+                VStack(spacing: 18) {
+                    card {
+                        VStack(alignment: .leading, spacing: 12) {
+                            sectionTitle("客户端管理", subtitle: nil)
+                            HStack(spacing: 10) {
+                                Button {
+                                    store.downloadAndOpenWineSteamInstaller()
+                                } label: {
+                                    Label("下载 Wine Steam", systemImage: "arrow.down.circle")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(store.isDownloadingInstaller)
+
+                                if store.isDownloadingInstaller {
+                                    ProgressView().controlSize(.small)
+                                }
+
+                                Spacer()
+
+                                Button(role: .destructive) {
+                                    store.stopWineSteamProcesses()
+                                } label: {
+                                    Label("关闭进程", systemImage: "power")
+                                }
+                                .controlSize(.small)
+                            }
+
+                            if !store.downloadStatusText.isEmpty {
+                                Text(store.downloadStatusText)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+
+                    card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionTitle("说明", subtitle: nil)
+                            ForEach(Array(store.wineSteamTips.enumerated()), id: \.offset) { _, tip in
+                                HStack(alignment: .top, spacing: 8) {
+                                    Image(systemName: "info.circle")
+                                        .foregroundStyle(.secondary)
+                                        .font(.caption)
+                                        .padding(.top, 2)
+                                    Text(tip)
+                                        .font(.callout)
+                                        .foregroundStyle(.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 24)
+                .padding(.bottom, 24)
+            }
+
+            statusBar
+        }
+    }
+
+    // MARK: Status bar（补上此前从未显示的 statusMessage）
+
+    private var statusBar: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "info.circle")
+                .foregroundStyle(.secondary)
+                .font(.caption)
+            Text(store.statusMessage)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+            Spacer()
+        }
+        .padding(.horizontal, 24)
+        .padding(.vertical, 8)
+        .background(.bar)
+    }
+
+    // MARK: Reusable building blocks
+
     private func card<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         content()
-            .padding(18)
+            .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .fill(
-                        LinearGradient(
-                            colors: [Color.white.opacity(0.05), Color.white.opacity(0.02)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
             )
             .overlay(
-                RoundedRectangle(cornerRadius: 20, style: .continuous)
-                    .stroke(Color.white.opacity(0.05), lineWidth: 1)
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
             )
     }
 
-    private func statBadge(_ title: String, _ value: String) -> some View {
-        HStack(spacing: 8) {
+    private func sectionTitle(_ title: String, subtitle: String?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .foregroundStyle(.white.opacity(0.65))
+                .font(.title3.weight(.semibold))
+            if let subtitle {
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func labeledField<Content: View>(_ title: String, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
+            content()
+        }
+    }
+
+    private func enginePill(_ text: String) -> some View {
+        Text(text)
+            .font(.caption.weight(.semibold))
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+            .foregroundStyle(.tint)
+    }
+
+    private func statBadge(_ title: String, _ value: String) -> some View {
+        HStack(spacing: 6) {
+            Text(title)
+                .foregroundStyle(.secondary)
             Text(value)
-                .foregroundStyle(.white)
                 .fontWeight(.semibold)
         }
         .font(.caption)
         .padding(.horizontal, 10)
-        .padding(.vertical, 6)
-        .background(Capsule().fill(Color.white.opacity(0.05)))
+        .padding(.vertical, 5)
+        .background(Capsule().fill(Color.primary.opacity(0.06)))
     }
 
     private func pathRow<Trailing: View>(title: String, value: String, @ViewBuilder trailing: () -> Trailing) -> some View {
         HStack(spacing: 10) {
             Text(title)
-                .font(.headline)
-                .foregroundStyle(.white.opacity(0.8))
+                .font(.callout.weight(.medium))
+                .foregroundStyle(.secondary)
                 .frame(width: 92, alignment: .leading)
             Text(value.isEmpty ? "尚未设置" : value)
                 .font(.system(.caption, design: .monospaced))
-                .foregroundStyle(.white.opacity(0.85))
+                .foregroundStyle(.primary)
                 .lineLimit(1)
+                .truncationMode(.middle)
                 .textSelection(.enabled)
             Spacer(minLength: 8)
             trailing()
         }
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.03)))
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
     }
 
     private func color(for state: RuntimeCheckItem.State) -> Color {
@@ -612,10 +788,42 @@ struct RootView: View {
         }
     }
 
-    private var selectionBinding: Binding<UUID?> {
+    private func exeDisplay(_ game: GameEntry?) -> String {
+        guard let game, !game.exePath.isEmpty else { return "尚未选择主程序" }
+        return game.exePath
+    }
+
+    // MARK: Bindings & selection sync
+
+    private var sidebarBinding: Binding<SidebarItem?> {
         Binding(
-            get: { store.selectedGameID },
-            set: { store.selectGame($0) }
+            get: { sidebarSelection },
+            set: { newValue in
+                sidebarSelection = newValue
+                if case .game(let id) = newValue {
+                    store.selectGame(id)
+                }
+            }
         )
+    }
+
+    private var nameBinding: Binding<String> {
+        Binding(
+            get: { store.selectedGame?.name ?? "" },
+            set: { store.renameSelectedGame($0) }
+        )
+    }
+
+    private var launchLanguageBinding: Binding<LaunchLanguageMode> {
+        Binding(
+            get: { store.selectedGame?.launchLanguageMode ?? .auto },
+            set: { store.setSelectedLaunchLanguage($0) }
+        )
+    }
+
+    private func syncInitialSelection() {
+        if sidebarSelection == nil {
+            sidebarSelection = store.selectedGameID.map(SidebarItem.game) ?? .steam
+        }
     }
 }
