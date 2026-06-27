@@ -3,7 +3,7 @@ import Foundation
 /// 应用品牌与版本信息（单一真相源）。
 enum AppInfo {
     static let name = "栞 Shiori"
-    static let subtitle = "exe · galgame · lightweight games for macOS"
+    static let subtitle = "exe · galgame · switch · lightweight games for macOS"
 
     /// 运行版本：优先取打包后 Info.plist 的 CFBundleShortVersionString，开发期回退常量。
     static var version: String {
@@ -12,8 +12,8 @@ enum AppInfo {
 
     static let repoOwner = "jojocys"
     static let repoName = "gal-for-MacOS"
-    /// 版本清单在仓库中的相对路径（应用位于 VNLauncherZero/ 子目录）。
-    static let manifestPath = "VNLauncherZero/version.json"
+    /// 版本清单在仓库中的相对路径（应用位于 Shiori/ 子目录）。
+    static let manifestPath = "Shiori/version.json"
     /// 分支名。
     static let branch = "main"
 

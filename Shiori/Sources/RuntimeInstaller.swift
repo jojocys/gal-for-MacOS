@@ -47,7 +47,7 @@ struct RuntimeInstaller {
     static func downloadLatestInstaller(kind: InstallerKind) async throws -> InstallerDownloadResult {
         let fm = FileManager.default
         let dir = fm.homeDirectoryForCurrentUser
-            .appendingPathComponent(".vnlauncher", isDirectory: true)
+            .appendingPathComponent(".shiori", isDirectory: true)
             .appendingPathComponent("downloads", isDirectory: true)
         try fm.createDirectory(at: dir, withIntermediateDirectories: true)
 
@@ -57,7 +57,7 @@ struct RuntimeInstaller {
         for repo in kind.candidateRepos {
             let apiURL = URL(string: "https://api.github.com/repos/\(repo.owner)/\(repo.repo)/releases/latest")!
             var req = URLRequest(url: apiURL)
-            req.setValue("GAL-FOR-MacOS/1.0", forHTTPHeaderField: "User-Agent")
+            req.setValue("Shiori/1.0", forHTTPHeaderField: "User-Agent")
             do {
                 let (data, response) = try await session.data(for: req)
                 guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else { continue }
@@ -77,7 +77,7 @@ struct RuntimeInstaller {
         }
 
         var downloadReq = URLRequest(url: sourceURL)
-        downloadReq.setValue("GAL-FOR-MacOS/1.0", forHTTPHeaderField: "User-Agent")
+        downloadReq.setValue("Shiori/1.0", forHTTPHeaderField: "User-Agent")
         let (tmpURL, response) = try await session.download(for: downloadReq)
         guard let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode) else {
             throw NSError(domain: "RuntimeInstaller", code: 2, userInfo: [NSLocalizedDescriptionKey: "下载安装包失败（网络或服务器返回异常）。"])

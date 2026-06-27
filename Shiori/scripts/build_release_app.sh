@@ -13,9 +13,11 @@ MACOS_DIR="$CONTENTS_DIR/MacOS"
 RESOURCES_DIR="$CONTENTS_DIR/Resources"
 EMBEDDED_WINE_DIR="$RESOURCES_DIR/EmbeddedWine"
 INSTALLERS_DIR="$RESOURCES_DIR/Installers"
+EMBEDDED_EMULATOR_DIR="$RESOURCES_DIR/EmbeddedEmulator"
+EMULATOR_SOURCE_APP="${EMBED_EMULATOR_APP_PATH:-}"
 EXECUTABLE_NAME="$APP_NAME"
-PACKAGE_BIN="$ROOT_DIR/.build/release/VNLauncherZero"
-ICON_SOURCE="$ROOT_DIR/assets/VNLauncherZero.icns"
+PACKAGE_BIN="$ROOT_DIR/.build/release/Shiori"
+ICON_SOURCE="$ROOT_DIR/assets/Shiori.icns"
 ICON_NAME="$APP_NAME.icns"
 WINE_SOURCE_APP="${EMBED_WINE_APP_PATH:-}"
 XQUARTZ_SOURCE_PKG="${EMBED_XQUARTZ_PKG_PATH:-}"
@@ -47,8 +49,7 @@ if [[ -z "$XQUARTZ_SOURCE_PKG" ]]; then
     "$HOME/Downloads/XQuartz.pkg" \
     "$HOME/Downloads/XQuartz-2.8.5.pkg" \
     "$HOME/Desktop/XQuartz-2.8.5.pkg" \
-    "$HOME/Desktop/XQuartz.pkg" \
-    "/Users/gaoxiaoli/Desktop/XQuartz-2.8.5.pkg"
+    "$HOME/Desktop/XQuartz.pkg"
   do
     if [[ -f "$candidate" ]]; then
       XQUARTZ_SOURCE_PKG="$candidate"
@@ -106,6 +107,20 @@ if command -v xattr >/dev/null 2>&1; then
   xattr -dr com.apple.quarantine "$INSTALLERS_DIR/XQuartz.pkg" >/dev/null 2>&1 || true
 fi
 
+# 可选：内置 Switch 模拟器（由 EMBED_EMULATOR_APP_PATH 提供）。
+# 注意：仅内置模拟器本体；绝不打包 prod.keys / 固件 / ROM（版权文件，由用户自备）。
+if [[ -n "$EMULATOR_SOURCE_APP" && -d "$EMULATOR_SOURCE_APP" ]]; then
+  echo "[4.6/7] Embedding Switch emulator..."
+  mkdir -p "$EMBEDDED_EMULATOR_DIR"
+  EMULATOR_APP_NAME="$(basename "$EMULATOR_SOURCE_APP")"
+  ditto "$EMULATOR_SOURCE_APP" "$EMBEDDED_EMULATOR_DIR/$EMULATOR_APP_NAME"
+  if command -v xattr >/dev/null 2>&1; then
+    xattr -dr com.apple.quarantine "$EMBEDDED_EMULATOR_DIR/$EMULATOR_APP_NAME" >/dev/null 2>&1 || true
+  fi
+else
+  echo "[4.6/7] EMBED_EMULATOR_APP_PATH 未设置，跳过内置模拟器。"
+fi
+
 cat > "$CONTENTS_DIR/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -139,6 +154,9 @@ PLIST
 
 echo "[5/7] Ad-hoc signing .app bundle..."
 codesign --force --deep --sign - --timestamp=none "$EMBEDDED_WINE_DIR/$WINE_APP_NAME" || true
+if [[ -d "$EMBEDDED_EMULATOR_DIR" ]]; then
+  find "$EMBEDDED_EMULATOR_DIR" -maxdepth 1 -name '*.app' -exec codesign --force --deep --sign - --timestamp=none {} \; || true
+fi
 codesign --force --deep --sign - --timestamp=none "$APP_BUNDLE"
 codesign --verify --deep --strict --verbose=1 "$APP_BUNDLE" >/dev/null
 

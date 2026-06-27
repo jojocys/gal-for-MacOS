@@ -34,8 +34,9 @@ enum AppearancePreference: String, CaseIterable, Identifiable {
     }
 }
 
-/// 侧栏顶层入口：Wine Steam 与「我的游戏」同级。
+/// 侧栏顶层入口：Shiori 主页（配置选择）/ Wine Steam / 单个游戏。
 enum SidebarItem: Hashable {
+    case home
     case steam
     case game(UUID)
 }
@@ -74,16 +75,6 @@ struct RootView: View {
         AppearancePreference(rawValue: appearanceRaw) ?? .system
     }
 
-    private var updateHelp: String {
-        switch store.updateState.phase {
-        case .available: return "有新版本 \(store.updateState.latestVersion)，点击下载"
-        case .checking: return "正在检查更新…"
-        case .upToDate: return "已是最新版本"
-        case .failed: return "检查更新失败，点击重试"
-        case .idle: return "检查更新"
-        }
-    }
-
     var body: some View {
         NavigationSplitView {
             sidebar
@@ -118,7 +109,7 @@ struct RootView: View {
     private var toolbarContent: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
             Button {
-                store.addEmptyGame()
+                createAndOpenGame()
             } label: {
                 Image(systemName: "plus")
             }
@@ -131,23 +122,6 @@ struct RootView: View {
                 Image(systemName: "arrow.clockwise")
             }
             .help("刷新")
-
-            Button {
-                if store.updateState.isAvailable {
-                    store.openReleasesPage()
-                } else {
-                    Task { await store.checkForUpdates(userInitiated: true) }
-                }
-            } label: {
-                if store.updateState.isAvailable {
-                    Image(systemName: "arrow.down.circle.fill")
-                        .foregroundStyle(.tint)
-                } else {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                }
-            }
-            .help(updateHelp)
-            .disabled(store.updateState.phase == .checking)
 
             Menu {
                 Picker("外观", selection: $appearanceRaw) {
@@ -193,24 +167,37 @@ struct RootView: View {
     }
 
     private var brandHeader: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "gamecontroller.fill")
-                .font(.title3)
-                .foregroundStyle(.tint)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(AppInfo.name)
-                    .font(.headline)
-                Text(AppInfo.subtitle)
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
+        Button {
+            sidebarSelection = .home
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: "gamecontroller.fill")
+                    .font(.title3)
+                    .foregroundStyle(.tint)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(AppInfo.name)
+                        .font(.headline)
+                        .foregroundStyle(.primary)
+                    Text(AppInfo.subtitle)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
             }
-            Spacer()
+            .padding(10)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(sidebarSelection == .home ? Color.accentColor.opacity(0.15) : Color.clear)
+            )
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 16)
-        .padding(.bottom, 10)
+        .buttonStyle(.plain)
+        .help("主页 · 配置选择")
+        .padding(.horizontal, 12)
+        .padding(.top, 14)
+        .padding(.bottom, 6)
     }
 
     private var steamRow: some View {
@@ -244,10 +231,7 @@ struct RootView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 4)
-            Text(game.engineHint)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            platformBadge(game.platform)
         }
         .padding(.vertical, 3)
     }
@@ -255,7 +239,7 @@ struct RootView: View {
     private var sidebarFooter: some View {
         VStack(spacing: 8) {
             Button {
-                store.addEmptyGame()
+                createAndOpenGame()
             } label: {
                 Label("新建配置", systemImage: "plus")
                     .frame(maxWidth: .infinity)
@@ -317,24 +301,113 @@ struct RootView: View {
     @ViewBuilder
     private var detail: some View {
         switch sidebarSelection {
+        case .home:
+            homeDetail
         case .steam:
             steamDetail
         case .game:
             gameDetail
         case .none:
-            emptyDetail
+            homeDetail
         }
     }
 
-    private var emptyDetail: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "gamecontroller")
-                .font(.system(size: 44))
-                .foregroundStyle(.secondary)
-            Text("从左侧选择一个游戏，或打开 Wine Steam")
-                .foregroundStyle(.secondary)
+    // MARK: Home / 配置选择页
+
+    private var homeDetail: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .top, spacing: 16) {
+                Spacer()
+                Button {
+                    createAndOpenGame()
+                } label: {
+                    Label("新建配置", systemImage: "plus")
+                        .font(.title3.weight(.semibold))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+            }
+            .padding(.horizontal, 24)
+            .padding(.top, 20)
+            .padding(.bottom, 16)
+
+            Divider()
+
+            ScrollView {
+                if store.games.isEmpty {
+                    VStack(spacing: 12) {
+                        Image(systemName: "tray")
+                            .font(.system(size: 40))
+                            .foregroundStyle(.secondary)
+                        Text("还没有任何游戏配置")
+                            .foregroundStyle(.secondary)
+                        Button {
+                            createAndOpenGame()
+                        } label: {
+                            Label("新建配置", systemImage: "plus")
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    .frame(maxWidth: .infinity, minHeight: 360)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 250), spacing: 16)], spacing: 16) {
+                        ForEach(store.games) { game in
+                            gameCard(game)
+                        }
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.vertical, 20)
+                }
+            }
+
+            statusBar
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func gameCard(_ game: GameEntry) -> some View {
+        Button {
+            openGame(game.id)
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Image(systemName: "puzzlepiece.fill")
+                        .foregroundStyle(.tint)
+                    Spacer()
+                    platformBadge(game.platform)
+                }
+                Text(game.name)
+                    .font(.headline)
+                    .foregroundStyle(.primary)
+                    .lineLimit(1)
+                Text(game.displaySubtitle)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                HStack {
+                    Text(isConfigured(game) ? "已配置" : "未配置")
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(Color(nsColor: .controlBackgroundColor))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.primary.opacity(0.07), lineWidth: 1)
+            )
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: Game detail
@@ -379,29 +452,33 @@ struct RootView: View {
                     .lineLimit(1)
 
                 HStack(spacing: 8) {
+                    platformBadge(game?.platform ?? .windows)
                     enginePill(game?.engineHint ?? "未识别")
-                    Text(exeDisplay(game))
+                    Text(mainFileDisplay(game))
                         .font(.system(.caption, design: .monospaced))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
                 }
 
-                HStack(spacing: 10) {
-                    Text("语言")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Picker("启动语言", selection: launchLanguageBinding) {
-                        ForEach(LaunchLanguageMode.allCases) { mode in
-                            Text(mode.title).tag(mode)
+                // 语言模式是 Wine locale，仅 Windows 适用；Switch 隐藏。
+                if game?.platform != .switchEmu {
+                    HStack(spacing: 10) {
+                        Text("语言")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        Picker("启动语言", selection: launchLanguageBinding) {
+                            ForEach(LaunchLanguageMode.allCases) { mode in
+                                Text(mode.title).tag(mode)
+                            }
                         }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
+                        .frame(width: 220)
+                        .disabled(game == nil)
                     }
-                    .pickerStyle(.segmented)
-                    .labelsHidden()
-                    .frame(width: 220)
-                    .disabled(game == nil)
+                    .padding(.top, 2)
                 }
-                .padding(.top, 2)
             }
 
             Spacer(minLength: 12)
@@ -440,8 +517,10 @@ struct RootView: View {
                     Button(role: .destructive) {
                         showDeleteConfirm = true
                     } label: {
-                        Label("删除", systemImage: "trash")
+                        Label("删除配置", systemImage: "trash")
                     }
+                    .buttonStyle(.bordered)
+                    .tint(.red)
                     .controlSize(.small)
                     .disabled(game == nil)
                 }
@@ -482,10 +561,18 @@ struct RootView: View {
                         } label: {
                             Label("重新扫描", systemImage: "arrow.clockwise")
                         }
-                        Button {
-                            store.chooseEXEManually()
-                        } label: {
-                            Label("手动选择 EXE", systemImage: "doc")
+                        if store.selectedGame?.platform == .switchEmu {
+                            Button {
+                                store.chooseSwitchROM()
+                            } label: {
+                                Label("手动选择 ROM", systemImage: "doc")
+                            }
+                        } else {
+                            Button {
+                                store.chooseEXEManually()
+                            } label: {
+                                Label("手动选择 EXE", systemImage: "doc")
+                            }
                         }
                     }
 
@@ -514,8 +601,10 @@ struct RootView: View {
                             sectionTitle("扫描结果", subtitle: nil)
                             Spacer()
                             statBadge("引擎", scan.engineHint)
-                            statBadge("XP3", "\(scan.xp3Count)")
-                            statBadge("候选", "\(scan.exeCandidates.count)")
+                            if scan.platform != .switchEmu {
+                                statBadge("XP3", "\(scan.xp3Count)")
+                            }
+                            statBadge(scan.platform == .switchEmu ? "ROM" : "候选", "\(scan.exeCandidates.count)")
                         }
 
                         ForEach(Array(scan.exeCandidates.prefix(5))) { candidate in
@@ -528,13 +617,31 @@ struct RootView: View {
             card {
                 VStack(alignment: .leading, spacing: 12) {
                     sectionTitle("路径", subtitle: nil)
-                    pathRow(title: "推荐 EXE", value: store.selectedGame?.exePath ?? "") {
-                        Button("选择") { store.chooseEXEManually() }
-                            .controlSize(.small)
-                    }
-                    pathRow(title: "Wine Prefix", value: store.selectedGame?.prefixDir ?? "") {
-                        Button("选择") { store.choosePrefixFolder() }
-                            .controlSize(.small)
+                    if store.selectedGame?.platform == .switchEmu {
+                        pathRow(title: "游戏 ROM", value: store.selectedGame?.romPath ?? "") {
+                            Button("选择") { store.chooseSwitchROM() }
+                                .controlSize(.small)
+                        }
+                        pathRow(title: "模拟器", value: store.selectedGame?.emulatorAppPath ?? "") {
+                            Button("选择") { store.chooseEmulatorApp() }
+                                .controlSize(.small)
+                        }
+                        if let script = store.selectedGame?.launchScriptPath, !script.isEmpty {
+                            pathRow(title: "启动脚本", value: script) {
+                                Text("优先")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    } else {
+                        pathRow(title: "推荐 EXE", value: store.selectedGame?.exePath ?? "") {
+                            Button("选择") { store.chooseEXEManually() }
+                                .controlSize(.small)
+                        }
+                        pathRow(title: "Wine Prefix", value: store.selectedGame?.prefixDir ?? "") {
+                            Button("选择") { store.choosePrefixFolder() }
+                                .controlSize(.small)
+                        }
                     }
 
                     Button {
@@ -635,6 +742,16 @@ struct RootView: View {
     // MARK: P2 运行环境内容
 
     private var runtimeContent: some View {
+        Group {
+            if store.selectedGame?.platform == .switchEmu {
+                switchRuntimeContent
+            } else {
+                windowsRuntimeContent
+            }
+        }
+    }
+
+    private var windowsRuntimeContent: some View {
         VStack(spacing: 18) {
             card {
                 VStack(alignment: .leading, spacing: 12) {
@@ -682,6 +799,102 @@ struct RootView: View {
                     }
                 }
             }
+        }
+    }
+
+    // MARK: Switch 运行环境（仅 Switch 游戏时出现）
+
+    private var switchRuntimeContent: some View {
+        let game = store.selectedGame
+        let bundled = SwitchRuntime.resolveBundledEmulator()
+        let emuReady = bundled != nil
+            || !((game?.emulatorAppPath.isEmpty ?? true))
+            || !((game?.launchScriptPath.isEmpty ?? true))
+        let emuDetail: String
+        if let b = bundled {
+            emuDetail = "内置模拟器：\(b.deletingPathExtension().lastPathComponent)"
+        } else if let s = game?.launchScriptPath, !s.isEmpty {
+            emuDetail = "复刻启动脚本：" + (s as NSString).lastPathComponent
+        } else if let e = game?.emulatorAppPath, !e.isEmpty {
+            emuDetail = e
+        } else {
+            emuDetail = "未设置 · 需你自备（任意 Switch 模拟器均可）"
+        }
+
+        return VStack(spacing: 18) {
+            card {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionTitle("Switch 运行环境", subtitle: "Switch 游戏不经 Wine，由原生模拟器运行；以下三项齐备才能启动。")
+                    switchReadyRow(title: "模拟器", ready: emuReady, detail: emuDetail, button: "选择") {
+                        store.chooseEmulatorApp()
+                    }
+                    switchReadyRow(title: "prod.keys", ready: store.switchKeysReady,
+                                   detail: store.preferredKeysPath.isEmpty ? "未导入 · 解密游戏所需 · 需你自备" : store.preferredKeysPath,
+                                   button: "导入") {
+                        store.chooseSwitchKeys()
+                    }
+                    switchReadyRow(title: "固件 firmware", ready: store.switchFirmwareReady,
+                                   detail: store.preferredFirmwarePath.isEmpty ? "未设置 · 系统服务所需 · 需你自备" : store.preferredFirmwarePath,
+                                   button: "选择") {
+                        store.chooseSwitchFirmware()
+                    }
+                }
+            }
+
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionTitle("Switch 游戏说明与限制", subtitle: nil)
+                    explainLine("Shiori 通过原生 Switch 模拟器运行 .nsp / .xci，不使用 Wine；能否运行与性能取决于模拟器本身。")
+                    explainLine("商业 Switch 游戏经过加密，必须有 prod.keys 才能解密，多数游戏还需系统固件 firmware 才能启动。")
+                    explainLine("并非所有 Switch 游戏都能在 macOS 上良好运行，请以模拟器的兼容性为准。")
+                }
+            }
+
+            card {
+                VStack(alignment: .leading, spacing: 10) {
+                    sectionTitle("关于 prod.keys 与固件（需你自备）", subtitle: nil)
+                    explainLine("prod.keys 是你的 Switch 主机密钥，用于解密游戏。请从你本人持有的 Switch 主机导出后，点上方「导入」选择该文件。")
+                    explainLine("固件 firmware 是一组 .nca 系统文件（字体 / 系统服务等）。同样从你本人的主机导出，选择其所在文件夹。")
+                    explainLine("为什么 Shiori 不提供这两样：它们是任天堂的版权文件，随 App 分发属于侵权。Shiori 只负责导入你自己合法获取的文件，绝不附带或代为下载。")
+                }
+            }
+        }
+    }
+
+    private func switchReadyRow(title: String, ready: Bool, detail: String, button: String, action: @escaping () -> Void) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            Circle()
+                .fill(ready ? Color.green : Color.orange)
+                .frame(width: 12, height: 12)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(title).font(.body.weight(.medium))
+                Text(detail)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .truncationMode(.middle)
+            }
+            Spacer(minLength: 8)
+            Button(button, action: action).controlSize(.small)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+
+    private func explainLine(_ text: String) -> some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "info.circle")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .padding(.top, 2)
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -764,8 +977,10 @@ struct RootView: View {
                                 Button(role: .destructive) {
                                     store.stopWineSteamProcesses()
                                 } label: {
-                                    Label("关闭进程", systemImage: "power")
+                                    Label("结束进程", systemImage: "power")
                                 }
+                                .buttonStyle(.bordered)
+                                .tint(.red)
                                 .controlSize(.small)
                             }
 
@@ -774,6 +989,27 @@ struct RootView: View {
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                                     .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                    }
+
+                    card {
+                        VStack(alignment: .leading, spacing: 10) {
+                            sectionTitle("运行环境", subtitle: "Steam 在部分 Wine 场景需要 XQuartz；如遇黑屏 / 无法显示窗口可安装。")
+                            HStack(spacing: 10) {
+                                Button {
+                                    store.installEmbeddedXQuartz()
+                                } label: {
+                                    Label("安装内置 XQuartz", systemImage: "arrow.down.app")
+                                }
+                                .buttonStyle(.bordered)
+
+                                Button {
+                                    store.openPrivacySettings()
+                                } label: {
+                                    Label("隐私与安全性", systemImage: "lock.shield")
+                                }
+                                .buttonStyle(.bordered)
                             }
                         }
                     }
@@ -869,6 +1105,19 @@ struct RootView: View {
             .foregroundStyle(.tint)
     }
 
+    /// 平台徽标：用图标区分 Windows（电脑）/ Switch（手柄），hover 显示平台名。Switch 用绿色避免红色像报错。
+    private func platformBadge(_ platform: GamePlatform) -> some View {
+        let symbol = platform == .switchEmu ? "gamecontroller.fill" : "desktopcomputer"
+        let color: Color = platform == .switchEmu ? .green : .blue
+        return Image(systemName: symbol)
+            .font(.caption2.weight(.semibold))
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Capsule().fill(color.opacity(0.16)))
+            .foregroundStyle(color)
+            .help(platform.title)
+    }
+
     private func statBadge(_ title: String, _ value: String) -> some View {
         HStack(spacing: 6) {
             Text(title)
@@ -919,6 +1168,26 @@ struct RootView: View {
         return game.exePath
     }
 
+    /// 主文件显示：Windows 用 EXE，Switch 用 ROM（与“Wine 打开 exe”同构）。
+    private func mainFileDisplay(_ game: GameEntry?) -> String {
+        guard let game else { return "尚未选择" }
+        switch game.platform {
+        case .windows:
+            return game.exePath.isEmpty ? "尚未选择主程序" : game.exePath
+        case .switchEmu:
+            if !game.romPath.isEmpty { return game.romPath }
+            if !game.launchScriptPath.isEmpty { return (game.launchScriptPath as NSString).lastPathComponent }
+            return "尚未选择 ROM"
+        }
+    }
+
+    private func isConfigured(_ game: GameEntry) -> Bool {
+        switch game.platform {
+        case .windows: return !game.exePath.isEmpty
+        case .switchEmu: return !game.romPath.isEmpty || !game.launchScriptPath.isEmpty
+        }
+    }
+
     // MARK: Bindings & selection sync
 
     private var sidebarBinding: Binding<SidebarItem?> {
@@ -949,7 +1218,23 @@ struct RootView: View {
 
     private func syncInitialSelection() {
         if sidebarSelection == nil {
-            sidebarSelection = store.selectedGameID.map(SidebarItem.game) ?? .steam
+            sidebarSelection = .home
+        }
+    }
+
+    /// 打开某个游戏配置（从主页卡片或侧栏进入其详情）。
+    private func openGame(_ id: UUID) {
+        sidebarSelection = .game(id)
+        gameSection = .setup
+        store.selectGame(id)
+    }
+
+    /// 新建配置并直接进入其详情。
+    private func createAndOpenGame() {
+        store.addEmptyGame()
+        if let id = store.selectedGameID {
+            sidebarSelection = .game(id)
+            gameSection = .setup
         }
     }
 }

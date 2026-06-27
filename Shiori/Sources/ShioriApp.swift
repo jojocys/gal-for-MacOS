@@ -1,7 +1,7 @@
 import SwiftUI
 
 @main
-struct VNLauncherZeroApp: App {
+struct ShioriApp: App {
     @StateObject private var store = AppStore()
 
     var body: some Scene {

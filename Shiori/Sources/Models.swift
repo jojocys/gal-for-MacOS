@@ -16,6 +16,26 @@ enum LaunchLanguageMode: String, Codable, CaseIterable, Identifiable {
     }
 }
 
+/// 游戏平台：Windows（Wine，默认核心）/ Nintendo Switch（原生模拟器）。
+enum GamePlatform: String, Codable {
+    case windows
+    case switchEmu = "switch"
+
+    var badge: String {
+        switch self {
+        case .windows: return "WIN"
+        case .switchEmu: return "SWITCH"
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .windows: return "Windows"
+        case .switchEmu: return "Nintendo Switch"
+        }
+    }
+}
+
 struct GameEntry: Identifiable, Codable, Hashable {
     var id: UUID
     var name: String
@@ -23,6 +43,10 @@ struct GameEntry: Identifiable, Codable, Hashable {
     var exePath: String
     var prefixDir: String
     var engineHint: String
+    var platform: GamePlatform
+    var romPath: String          // Switch: 游戏 ROM（.nsp/.xci）
+    var emulatorAppPath: String  // Switch: 模拟器 .app（任意，不限 Ryujinx）
+    var launchScriptPath: String // Switch: 现成启动脚本（优先复刻）
     var launchLanguageMode: LaunchLanguageMode
     var notes: String
     var createdAt: Date
@@ -35,6 +59,10 @@ struct GameEntry: Identifiable, Codable, Hashable {
         exePath: String = "",
         prefixDir: String = "",
         engineHint: String = "未识别",
+        platform: GamePlatform = .windows,
+        romPath: String = "",
+        emulatorAppPath: String = "",
+        launchScriptPath: String = "",
         launchLanguageMode: LaunchLanguageMode = .auto,
         notes: String = "",
         createdAt: Date = Date(),
@@ -46,6 +74,10 @@ struct GameEntry: Identifiable, Codable, Hashable {
         self.exePath = exePath
         self.prefixDir = prefixDir
         self.engineHint = engineHint
+        self.platform = platform
+        self.romPath = romPath
+        self.emulatorAppPath = emulatorAppPath
+        self.launchScriptPath = launchScriptPath
         self.launchLanguageMode = launchLanguageMode
         self.notes = notes
         self.createdAt = createdAt
@@ -59,6 +91,10 @@ struct GameEntry: Identifiable, Codable, Hashable {
         case exePath
         case prefixDir
         case engineHint
+        case platform
+        case romPath
+        case emulatorAppPath
+        case launchScriptPath
         case launchLanguageMode
         case notes
         case createdAt
@@ -73,6 +109,10 @@ struct GameEntry: Identifiable, Codable, Hashable {
         exePath = try container.decodeIfPresent(String.self, forKey: .exePath) ?? ""
         prefixDir = try container.decodeIfPresent(String.self, forKey: .prefixDir) ?? ""
         engineHint = try container.decodeIfPresent(String.self, forKey: .engineHint) ?? "未识别"
+        platform = try container.decodeIfPresent(GamePlatform.self, forKey: .platform) ?? .windows
+        romPath = try container.decodeIfPresent(String.self, forKey: .romPath) ?? ""
+        emulatorAppPath = try container.decodeIfPresent(String.self, forKey: .emulatorAppPath) ?? ""
+        launchScriptPath = try container.decodeIfPresent(String.self, forKey: .launchScriptPath) ?? ""
         launchLanguageMode = try container.decodeIfPresent(LaunchLanguageMode.self, forKey: .launchLanguageMode) ?? .auto
         notes = try container.decodeIfPresent(String.self, forKey: .notes) ?? ""
         createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt) ?? Date()
@@ -106,6 +146,9 @@ struct GameStoreFile: Codable {
     var games: [GameEntry]
     var preferredWineBinaryPath: String
     var preferredWineAppPath: String
+    // Switch 运行所需，由用户自备（不随 App 分发）。可选以兼容旧库。
+    var preferredKeysPath: String?
+    var preferredFirmwarePath: String?
 }
 
 struct ScanCandidate: Identifiable, Hashable {
@@ -143,9 +186,15 @@ struct ScanResult {
     let xp3Count: Int
     let exeCandidates: [ScanCandidate]
     let antiCheats: [AntiCheatHit]
+    var platform: GamePlatform = .windows
+    var romURL: URL? = nil            // Switch ROM（.nsp/.xci）
+    var emulatorAppURL: URL? = nil    // 检测到的任意 Switch 模拟器 .app
+    var emulatorName: String? = nil   // 模拟器显示名（如 Ryujinx / yuzu …）
+    var launchScriptURL: URL? = nil   // 现成启动脚本（.command/.sh）
 
     var recommendedEXE: URL? { exeCandidates.first?.exeURL }
     var hasBlockingAntiCheat: Bool { antiCheats.contains { $0.severity == .blocking } }
+    var isSwitch: Bool { platform == .switchEmu }
 }
 
 struct RuntimeCheckItem: Identifiable {

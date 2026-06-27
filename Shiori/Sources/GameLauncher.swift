@@ -7,6 +7,9 @@ enum GameLauncherError: LocalizedError {
     case prefixCreateFailed
     case wineNotFound
     case logCreateFailed
+    case romMissing
+    case emulatorMissing
+    case switchLaunchFailed
 
     var errorDescription: String? {
         switch self {
@@ -16,12 +19,26 @@ enum GameLauncherError: LocalizedError {
         case .prefixCreateFailed: return "无法创建 Wine Prefix 文件夹。"
         case .wineNotFound: return "未找到 Wine。请使用内置 Wine 版本的 App，或手动指定 Wine。"
         case .logCreateFailed: return "无法创建日志文件。"
+        case .romMissing: return "Switch ROM 不存在，请在配置中重新选择 ROM。"
+        case .emulatorMissing: return "未找到 Switch 模拟器，请在配置中指定模拟器 App。"
+        case .switchLaunchFailed: return "启动 Switch 模拟器失败。"
         }
     }
 }
 
 enum GameLauncher {
-    static func launch(game: GameEntry, logsDir: URL, preferredWineBinaryPath: String) throws -> URL {
+    /// 统一入口：按平台路由。Windows 走 Wine（默认核心，体验不变）；Switch 才跳出 Wine 走原生模拟器。
+    static func launch(game: GameEntry, logsDir: URL, preferredWineBinaryPath: String,
+                       switchKeysPath: String = "", switchFirmwarePath: String = "", switchDataDir: URL? = nil) throws -> URL {
+        switch game.platform {
+        case .windows:
+            return try launchWindows(game: game, logsDir: logsDir, preferredWineBinaryPath: preferredWineBinaryPath)
+        case .switchEmu:
+            return try launchSwitch(game: game, logsDir: logsDir, keysPath: switchKeysPath, firmwarePath: switchFirmwarePath, dataDir: switchDataDir)
+        }
+    }
+
+    private static func launchWindows(game: GameEntry, logsDir: URL, preferredWineBinaryPath: String) throws -> URL {
         guard let exeURL = game.exeURL else { throw GameLauncherError.gameNotConfigured }
         guard let folderURL = game.folderURL else { throw GameLauncherError.gameFolderMissing }
         let fm = FileManager.default
@@ -85,6 +102,67 @@ enum GameLauncher {
         process.terminationHandler = { _ in try? fileHandle.close() }
 
         try process.run()
+        return logURL
+    }
+
+    /// Switch：优先复刻游戏夹里的现成一键脚本（兼容任意模拟器/参数/汉化设置）；否则通用 open -n。
+    private static func launchSwitch(game: GameEntry, logsDir: URL, keysPath: String, firmwarePath: String, dataDir: URL?) throws -> URL {
+        let fm = FileManager.default
+        try? fm.createDirectory(at: logsDir, withIntermediateDirectories: true)
+        let logURL = logsDir.appendingPathComponent(logFileName(for: game))
+        _ = fm.createFile(atPath: logURL.path, contents: nil)
+
+        let process = Process()
+        var note = ""
+
+        if !game.launchScriptPath.isEmpty, fm.fileExists(atPath: game.launchScriptPath) {
+            // 1) 用户现成脚本：完整设置（含 mod / 汉化），最忠实
+            process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+            process.arguments = [game.launchScriptPath]
+            note = "SCRIPT=\(game.launchScriptPath)"
+        } else if let bundled = SwitchRuntime.resolveBundledEmulator(),
+                  let exec = SwitchRuntime.executable(in: bundled),
+                  let dataDir {
+            // 2) 内置模拟器 + 受管数据目录（铺入用户自备 keys/固件）→ 真正的"一键"
+            guard !game.romPath.isEmpty, fm.fileExists(atPath: game.romPath) else {
+                throw GameLauncherError.romMissing
+            }
+            SwitchRuntime.prepareDataDir(dataDir, keysPath: keysPath, firmwarePath: firmwarePath)
+            process.executableURL = exec
+            process.arguments = ["--root-data-dir", dataDir.path, game.romPath]
+            note = "EMULATOR(bundled)=\(bundled.path)\nDATA=\(dataDir.path)\nROM=\(game.romPath)"
+        } else if !game.emulatorAppPath.isEmpty, fm.fileExists(atPath: game.emulatorAppPath) {
+            // 3) 用户已装的模拟器：open -n <模拟器.app> --args <rom>，适配 Ryujinx / yuzu 系等
+            guard !game.romPath.isEmpty, fm.fileExists(atPath: game.romPath) else {
+                throw GameLauncherError.romMissing
+            }
+            process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+            process.arguments = ["-n", game.emulatorAppPath, "--args", game.romPath]
+            note = "EMULATOR(user)=\(game.emulatorAppPath)\nROM=\(game.romPath)"
+        } else {
+            throw GameLauncherError.emulatorMissing
+        }
+
+        let prelude = [
+            "[\(Date())] Switch launch",
+            "GAME=\(game.name)",
+            note,
+            ""
+        ].joined(separator: "\n")
+        if let data = prelude.data(using: .utf8) { try? data.append(to: logURL) }
+
+        if let handle = try? FileHandle(forWritingTo: logURL) {
+            _ = try? handle.seekToEnd()
+            process.standardOutput = handle
+            process.standardError = handle
+            process.terminationHandler = { _ in try? handle.close() }
+        }
+
+        do {
+            try process.run()
+        } catch {
+            throw GameLauncherError.switchLaunchFailed
+        }
         return logURL
     }
 

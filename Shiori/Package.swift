@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "VNLauncherZero",
+    name: "Shiori",
     platforms: [
         .macOS(.v13)
     ],
     products: [
-        .executable(name: "VNLauncherZero", targets: ["VNLauncherZero"])
+        .executable(name: "Shiori", targets: ["Shiori"])
     ],
     targets: [
         .executableTarget(
-            name: "VNLauncherZero",
+            name: "Shiori",
             path: "Sources"
         )
     ]

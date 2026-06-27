@@ -4,9 +4,9 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ASSETS_DIR="$ROOT_DIR/assets"
 ICONSET_DIR="$ASSETS_DIR/AppIcon.iconset"
-OUTPUT_ICNS="$ASSETS_DIR/VNLauncherZero.icns"
+OUTPUT_ICNS="$ASSETS_DIR/Shiori.icns"
 CUSTOM_ICON="$ASSETS_DIR/custom-logo.png"
-ALT_CUSTOM_ICON="$ASSETS_DIR/GAL FOR MacOS logo.png"
+ALT_CUSTOM_ICON="$ASSETS_DIR/Shiori logo.png"
 TMP_DIR="$(mktemp -d)"
 ROUNDED_SRC="$TMP_DIR/rounded-source.png"
 trap 'rm -rf "$TMP_DIR"' EXIT
@@ -73,6 +73,7 @@ let squircle = RoundedRectangle(cornerRadius: radius, style: .continuous).path(i
 cg.addPath(squircle.cgPath)
 cg.clip()
 
+// 图像铺满圆角主体（满幅，四角随圆角裁切）
 image.draw(in: bodyRect, from: .zero, operation: .copy, fraction: 1.0)
 
 NSGraphicsContext.restoreGraphicsState()
@@ -100,9 +101,9 @@ let bg = NSGradient(colors: [NSColor(calibratedRed: 0.08, green: 0.13, blue: 0.2
 bg.draw(in: rect, angle: -25)
 let center = NSBezierPath(ovalIn: NSRect(x: 170, y: 190, width: 684, height: 684))
 NSColor(calibratedWhite: 1, alpha: 0.08).setFill(); center.fill()
-let text = NSString(string: "GAL")
-text.draw(at: NSPoint(x: 310, y: 440), withAttributes: [
-    .font: NSFont.boldSystemFont(ofSize: 190),
+let text = NSString(string: "栞")
+text.draw(at: NSPoint(x: 382, y: 365), withAttributes: [
+    .font: NSFont.boldSystemFont(ofSize: 290),
     .foregroundColor: NSColor.white
 ])
 NSGraphicsContext.restoreGraphicsState()

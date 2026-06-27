@@ -15,6 +15,10 @@ enum GameScanner {
         var xp3Count = 0
         var exeURLs: [URL] = []
         var basenames = Set<String>()
+        var romURLs: [URL] = []
+        var ncaFound = false
+        var emulatorApps: [URL] = []
+        var launchScripts: [URL] = []
 
         while let item = enumerator?.nextObject() as? URL {
             let rel = item.path.replacingOccurrences(of: folderURL.path, with: "")
@@ -29,12 +33,22 @@ enum GameScanner {
             // 文件与目录名都纳入反作弊特征比对（反作弊常以独立文件夹或 .sys 驱动形式存在）。
             basenames.insert(item.lastPathComponent.lowercased())
 
-            if values.isDirectory == true { continue }
+            if values.isDirectory == true {
+                // 检测任意 Switch 模拟器 .app（不限 Ryujinx），并跳过其内部以提速。
+                if item.pathExtension.lowercased() == "app" {
+                    if isEmulatorApp(item) { emulatorApps.append(item) }
+                    enumerator?.skipDescendants()
+                }
+                continue
+            }
             guard values.isRegularFile == true else { continue }
 
             let ext = item.pathExtension.lowercased()
             if ext == "xp3" { xp3Count += 1 }
             if ext == "exe" { exeURLs.append(item) }
+            if ext == "nsp" || ext == "xci" { romURLs.append(item) }
+            if ext == "nca" { ncaFound = true }
+            if isLaunchScript(item) { launchScripts.append(item) }
         }
 
         let engineHint: String = xp3Count > 0 ? "KiriKiri/XP3" : "未识别"
@@ -49,6 +63,39 @@ enum GameScanner {
 
         let antiCheats = detectAntiCheats(in: basenames)
 
+        // —— Switch 判定：依据游戏文件（.nsp/.xci/.nca），与具体模拟器无关 ——
+        if !romURLs.isEmpty || ncaFound {
+            let script = pickLaunchScript(launchScripts)
+            let parsed = script.flatMap { parseLaunchScript($0) }
+            let emulatorURL = parsed?.emulator ?? emulatorApps.first
+            let emulatorName = emulatorURL.map { $0.deletingPathExtension().lastPathComponent }
+
+            // ROM 复用与 EXE 完全相同的“候选 + 选用”组件；脚本指定的 ROM 置顶。
+            var romList: [URL] = []
+            if let pr = parsed?.rom { romList.append(pr) }
+            for r in romURLs where !romList.contains(r) { romList.append(r) }
+            let romCandidates: [ScanCandidate] = romList.enumerated().map { idx, rom in
+                let isNsp = rom.pathExtension.lowercased() == "nsp"
+                let reason = (idx == 0 && parsed?.rom != nil)
+                    ? "启动脚本指定"
+                    : (isNsp ? "Switch ROM（.nsp）" : "Switch ROM（.xci）")
+                return ScanCandidate(exeURL: rom, score: 100 - idx, reason: reason)
+            }
+
+            return ScanResult(
+                folderURL: folderURL,
+                engineHint: "Nintendo Switch",
+                xp3Count: xp3Count,
+                exeCandidates: romCandidates,
+                antiCheats: antiCheats,
+                platform: .switchEmu,
+                romURL: romList.first,
+                emulatorAppURL: emulatorURL,
+                emulatorName: emulatorName,
+                launchScriptURL: script
+            )
+        }
+
         return ScanResult(
             folderURL: folderURL,
             engineHint: engineHint,
@@ -56,6 +103,64 @@ enum GameScanner {
             exeCandidates: candidates,
             antiCheats: antiCheats
         )
+    }
+
+    // MARK: - Switch 检测辅助（模拟器无关）
+
+    private static let emulatorNamePatterns = [
+        "ryujinx", "ryubing", "kenji", "yuzu", "suyu", "sudachi", "citron", "torzu", "eden", "strato"
+    ]
+
+    private static func isEmulatorApp(_ url: URL) -> Bool {
+        let name = url.deletingPathExtension().lastPathComponent.lowercased()
+        return emulatorNamePatterns.contains { name.contains($0) }
+    }
+
+    private static func isLaunchScript(_ url: URL) -> Bool {
+        let ext = url.pathExtension.lowercased()
+        let name = url.deletingPathExtension().lastPathComponent.lowercased()
+        let exclude = ["install", "build", "setup", "dotnet", "make", "clone", "convert", "update", "patch", "extract", "uninstall"]
+        if exclude.contains(where: { name.contains($0) }) { return false }
+        if ext == "command" { return true }
+        if ext == "sh" {
+            let launch = ["启动", "launch", "start", "play", "run", "boot", "游戏", "game"]
+            return launch.contains { name.contains($0) }
+        }
+        return false
+    }
+
+    private static func pickLaunchScript(_ scripts: [URL]) -> URL? {
+        guard !scripts.isEmpty else { return nil }
+        let launchKw = ["启动", "launch", "start", "play", "run", "游戏", "game"]
+        func score(_ u: URL) -> Int {
+            let n = u.deletingPathExtension().lastPathComponent.lowercased()
+            var s = 0
+            if launchKw.contains(where: { n.contains($0) }) { s += 10 }
+            if u.pathExtension.lowercased() == "command" { s += 5 }
+            return s
+        }
+        return scripts.sorted { score($0) > score($1) }.first
+    }
+
+    /// 解析脚本里的 EMULATOR= / GAME=（兼容用户现成的一键启动脚本）。
+    private static func parseLaunchScript(_ url: URL) -> (rom: URL?, emulator: URL?)? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+        func value(_ key: String) -> String? {
+            for line in text.split(separator: "\n") {
+                let t = line.trimmingCharacters(in: .whitespaces)
+                if t.hasPrefix(key + "=") {
+                    let raw = String(t.dropFirst(key.count + 1)).trimmingCharacters(in: .whitespaces)
+                    let v = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
+                    return v.isEmpty ? nil : v
+                }
+            }
+            return nil
+        }
+        let fm = FileManager.default
+        let emu = value("EMULATOR").flatMap { fm.fileExists(atPath: $0) ? URL(fileURLWithPath: $0) : nil }
+        let rom = value("GAME").flatMap { fm.fileExists(atPath: $0) ? URL(fileURLWithPath: $0) : nil }
+        if emu == nil && rom == nil { return nil }
+        return (rom, emu)
     }
 
     /// 依据已知反作弊的特征文件 / 目录名识别，区分「内核级无解」与「Linux/Proton 有限可行」两档。
