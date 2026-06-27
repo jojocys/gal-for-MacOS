@@ -1,6 +1,6 @@
 # 栞 Shiori
 
-**Shiori 是一个免费、轻量、面向 macOS 的 Galgame / Windows EXE / Wine Steam / Switch 游戏启动器。**
+**Shiori 是一个免费、轻量、面向 macOS 的 视觉文字小说 / Windows EXE / Wine Steam / Switch 等的文件启动器。**
 
 它的目标很直接：把“在 Mac 上跑 Windows 视觉小说”这件事从一堆终端命令、Wine 路径、Prefix 配置、XQuartz、Rosetta 提示里拉出来，变成一个更接近普通 App 的三步流程：
 
@@ -96,7 +96,7 @@ Windows 游戏常见乱码问题通常和 locale / 字体有关。Shiori 在游�
 
 ### 6. Switch 游戏
 
-Shiori 检测到 `.nsp` / `.xci` 后会切到 Switch 模式。Switch 模式不使用 Wine，而是调用原生 Switch 模拟器。
+Shiori 检测到 `.nsp` / `.xci` 后会切到 Switch 模式。Switch 模式不使用 Wine，而是调用原生 Switch 模拟器。Shiori 只负责保存路径和启动模拟器，`prod.keys`、firmware 固件、ROM 都需要你自己准备并在 App 中手动导入或选择。
 
 你需要自己准备：
 
@@ -105,7 +105,7 @@ Shiori 检测到 `.nsp` / `.xci` 后会切到 Switch 模式。Switch 模式不�
 - 你自己主机导出的 firmware 固件目录
 - 你合法持有的 `.nsp` / `.xci`
 
-Shiori 不会也不能打包这些版权文件。
+Shiori 不会也不能打包、下载或代管这些版权文件。
 
 ## Wine、XQuartz、Rosetta 到底是什么
 
@@ -286,19 +286,6 @@ Wine 不是虚拟机，也不是完整 Windows。它不能加载 Windows 内核�
 4. 检查 EXE 是否选错
 5. 换一个独立 Prefix
 6. 切换语言模式
-
-## 截图
-
-当前仓库还没有正式教程截图。建议后续放入：
-
-```text
-docs/screenshots/home.png
-docs/screenshots/runtime.png
-docs/screenshots/scan-result.png
-docs/screenshots/wine-steam.png
-```
-
-然后在本节加入图片即可。
 
 ## 免责声明
 
